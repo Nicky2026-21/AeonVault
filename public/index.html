@@ -43,9 +43,9 @@
       <button class="btn btn-outline" id="themeToggleBtn" title="Toggle Theme">
         <span id="themeIcon">☀️</span>
       </button>
-      <div class="user-pill">
-        <span class="avatar">NC</span>
-        <span class="username">NexusCommander</span>
+      <div class="user-pill" id="userAccountPill" style="cursor: pointer;" title="Manage and Add Accounts" onclick="openModal('accountsModal')">
+        <span class="avatar" id="headerAvatar">NC</span>
+        <span class="username" id="headerUsername">NexusCommander</span>
       </div>
     </div>
   </header>
@@ -382,6 +382,49 @@
       <div class="modal-footer">
         <button class="btn btn-outline" onclick="closeModal('shareModal')">Close</button>
         <button class="btn btn-primary" id="confirmGenerateShareBtn" onclick="confirmCreateShare()">Generate Link</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 4: Accounts Management & Switcher -->
+  <div class="modal-overlay" id="accountsModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Vault Accounts Management</h3>
+        <button class="btn-close" onclick="closeModal('accountsModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <label>ACTIVE ACCOUNT</label>
+        <div class="active-account-card" id="activeAccountCard" style="background: rgba(0, 245, 255, 0.08); border: 1px solid var(--neon-cyan); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+          <!-- Rendered via JS -->
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; margin-bottom: 8px;">
+          <label style="margin: 0;">SAVED ACCOUNTS</label>
+          <button class="btn btn-outline btn-sm" id="toggleAddAccountFormBtn" onclick="toggleAddAccountForm()">+ Add Account</button>
+        </div>
+
+        <div class="saved-accounts-list" id="savedAccountsList" style="display: flex; flex-direction: column; gap: 8px;">
+          <!-- Rendered via JS -->
+        </div>
+
+        <!-- Add Account Collapsible Form -->
+        <div id="addAccountForm" style="display: none; margin-top: 12px; padding: 12px; border-radius: 8px; border: 1px solid var(--neon-cyan); background: rgba(0, 245, 255, 0.05);">
+          <h4 style="margin-top: 0; margin-bottom: 8px; color: var(--neon-cyan);">Create New Partition Profile</h4>
+          <input type="text" id="newAccountUsername" placeholder="Commander Username" class="input-field" style="margin-bottom: 8px; width: 100%;">
+          <input type="email" id="newAccountEmail" placeholder="account@vault.space" class="input-field" style="margin-bottom: 8px; width: 100%;">
+          <select id="newAccountTier" class="input-field" style="margin-bottom: 8px; width: 100%;">
+            <option value="Æon Prime">Æon Prime (1 QB Quota)</option>
+            <option value="Sovereign Enterprise">Sovereign Enterprise (1 QB Quota)</option>
+          </select>
+          <div style="display: flex; gap: 8px; justify-content: flex-end;">
+            <button class="btn btn-outline btn-sm" onclick="toggleAddAccountForm()">Cancel</button>
+            <button class="btn btn-primary btn-sm" onclick="submitAddNewAccount()">Create & Switch</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('accountsModal')">Close</button>
       </div>
     </div>
   </div>

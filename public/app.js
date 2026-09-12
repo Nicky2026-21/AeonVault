@@ -3,11 +3,21 @@ const VAULT_KEY = "aeonvault_state_v1";
 
 const defaultState = {
   user: {
+    id: "acc_1",
     username: "NexusCommander",
     email: "vault.commander@aeonvaultfilemanager.vercel.app",
     quotaUsedBytes: 45900000,
     planTier: "Æon Prime"
   },
+  accounts: [
+    {
+      id: "acc_1",
+      username: "NexusCommander",
+      email: "vault.commander@aeonvaultfilemanager.vercel.app",
+      quotaUsedBytes: 45900000,
+      planTier: "Æon Prime"
+    }
+  ],
   files: [
     {
       id: "f1",
@@ -483,6 +493,178 @@ if (themeBtn) {
   };
 }
 
+// Multi-Account Management
+function ensureAccountsList() {
+  if (!vault.accounts || !Array.isArray(vault.accounts) || vault.accounts.length === 0) {
+    vault.accounts = [
+      {
+        id: vault.user.id || "acc_1",
+        username: vault.user.username || "NexusCommander",
+        email: vault.user.email || "vault.commander@aeonvaultfilemanager.vercel.app",
+        quotaUsedBytes: vault.user.quotaUsedBytes || 45900000,
+        planTier: vault.user.planTier || "Æon Prime"
+      }
+    ];
+    saveVault();
+  }
+}
+
+function renderAccountsUI() {
+  ensureAccountsList();
+
+  // Header pill
+  const avatarEl = document.getElementById("headerAvatar");
+  const usernameEl = document.getElementById("headerUsername");
+  if (avatarEl && vault.user.username) {
+    avatarEl.textContent = vault.user.username.slice(0, 2).toUpperCase();
+  }
+  if (usernameEl && vault.user.username) {
+    usernameEl.textContent = vault.user.username;
+  }
+
+  // Active account card in modal
+  const activeCard = document.getElementById("activeAccountCard");
+  if (activeCard) {
+    activeCard.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div style="width: 34px; height: 34px; border-radius: 50%; background: var(--neon-cyan); color: #000; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px;">
+            ${(vault.user.username || "AV").slice(0, 2).toUpperCase()}
+          </div>
+          <div>
+            <div style="font-weight: bold; color: var(--text-primary);">${escapeHtml(vault.user.username)}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">${escapeHtml(vault.user.email)}</div>
+          </div>
+        </div>
+        <span class="badge badge-cyan">${escapeHtml(vault.user.planTier)}</span>
+      </div>
+      <div style="margin-top: 8px; font-size: 11px; color: var(--emerald-glow); display: flex; align-items: center; gap: 4px;">
+        <span>🔒</span> Zero-inactivity purge guarantee · 1 QB Quota Active
+      </div>
+    `;
+  }
+
+  // Saved accounts list
+  const savedList = document.getElementById("savedAccountsList");
+  if (savedList) {
+    const otherAccounts = vault.accounts.filter(a => a.id !== vault.user.id && a.email !== vault.user.email);
+    if (otherAccounts.length === 0) {
+      savedList.innerHTML = `<div style="font-size: 12px; color: var(--text-muted); padding: 6px 0;">No other accounts saved on this device. Click "+ Add Account" to create or link an additional partition.</div>`;
+    } else {
+      savedList.innerHTML = otherAccounts.map(acc => `
+        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); border-radius: 6px; padding: 8px 10px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="width: 28px; height: 28px; border-radius: 50%; background: var(--electric-violet); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 10px;">
+              ${acc.username.slice(0, 2).toUpperCase()}
+            </div>
+            <div>
+              <div style="font-weight: 600; font-size: 12px;">${escapeHtml(acc.username)}</div>
+              <div style="font-size: 10px; color: var(--text-muted);">${escapeHtml(acc.email)} · ${acc.planTier}</div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <button class="btn btn-outline btn-sm" onclick="switchAccount('${acc.id}')">Switch</button>
+            <button class="btn btn-outline btn-sm" style="color: var(--coral-neon);" onclick="removeAccount('${acc.id}')">Remove</button>
+          </div>
+        </div>
+      `).join("");
+    }
+  }
+}
+
+function toggleAddAccountForm() {
+  const form = document.getElementById("addAccountForm");
+  if (form) {
+    form.style.display = form.style.display === "none" ? "block" : "none";
+  }
+}
+
+function submitAddNewAccount() {
+  const uInput = document.getElementById("newAccountUsername");
+  const eInput = document.getElementById("newAccountEmail");
+  const tInput = document.getElementById("newAccountTier");
+
+  const username = uInput ? uInput.value.trim() : "";
+  const email = eInput ? eInput.value.trim() : "";
+  const tier = tInput ? tInput.value : "Æon Prime";
+
+  if (!username || !email) {
+    alert("Please specify both a username and valid email address.");
+    return;
+  }
+  if (!email.includes("@")) {
+    alert("Please enter a valid email address.");
+    return;
+  }
+
+  ensureAccountsList();
+
+  // Check if exists
+  const existing = vault.accounts.find(a => a.email.toLowerCase() === email.toLowerCase());
+  if (existing) {
+    alert("An account with this email already exists on this device. Switching to existing account.");
+    switchAccount(existing.id);
+    toggleAddAccountForm();
+    return;
+  }
+
+  const newAcc = {
+    id: "acc_" + Date.now(),
+    username: username,
+    email: email,
+    quotaUsedBytes: 0,
+    planTier: tier
+  };
+
+  vault.accounts.push(newAcc);
+  vault.user = newAcc;
+
+  // Add ledger activity
+  vault.activities.unshift({
+    id: "act_" + Date.now(),
+    action: "ACCOUNT_ADDED",
+    desc: `New vault profile '${username}' added and activated with 1 QB quota`,
+    time: "Just now"
+  });
+
+  saveVault();
+  renderAccountsUI();
+  updateQuotaDisplay();
+  toggleAddAccountForm();
+  if (uInput) uInput.value = "";
+  if (eInput) eInput.value = "";
+
+  alert(`Account '${username}' created and activated!`);
+}
+
+function switchAccount(accountId) {
+  ensureAccountsList();
+  const target = vault.accounts.find(a => a.id === accountId);
+  if (target) {
+    vault.user = target;
+    saveVault();
+    renderAccountsUI();
+    updateQuotaDisplay();
+    alert(`Switched to account '${target.username}'`);
+  }
+}
+
+function removeAccount(accountId) {
+  ensureAccountsList();
+  const target = vault.accounts.find(a => a.id === accountId);
+  if (!target) return;
+  if (!confirm(`Are you sure you want to remove account '${target.username}' from this device?`)) return;
+
+  vault.accounts = vault.accounts.filter(a => a.id !== accountId);
+  if (vault.user.id === accountId) {
+    vault.user = vault.accounts[0] || defaultState.user;
+  }
+  saveVault();
+  renderAccountsUI();
+  updateQuotaDisplay();
+}
+
 // Initialize
 renderRecentFiles();
 updateQuotaDisplay();
+renderAccountsUI();

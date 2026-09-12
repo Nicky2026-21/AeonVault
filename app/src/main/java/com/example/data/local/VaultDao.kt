@@ -32,6 +32,12 @@ interface VaultDao {
     @Query("SELECT * FROM users LIMIT 1")
     suspend fun getFirstUser(): User?
 
+    @Query("SELECT * FROM users ORDER BY createdAt ASC")
+    fun getAllUsers(): Flow<List<User>>
+
+    @Query("DELETE FROM users WHERE id = :userId")
+    suspend fun deleteUser(userId: String)
+
     @Query("UPDATE users SET quotaUsedBytes = :usedBytes WHERE id = :userId")
     suspend fun updateUserQuota(userId: String, usedBytes: Long)
 

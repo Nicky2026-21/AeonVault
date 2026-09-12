@@ -5,9 +5,11 @@ import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,20 +24,27 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.ManageAccounts
 import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -62,6 +71,7 @@ import com.example.data.model.UploadStatus
 import com.example.data.model.User
 import com.example.data.model.VaultItem
 import com.example.data.repository.VaultRepository
+import com.example.ui.components.AddAccountDialog
 import com.example.ui.components.CyberBadge
 import com.example.ui.components.FileItemCard
 import com.example.ui.components.GlassCard
@@ -87,6 +97,7 @@ fun DashboardScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val currentUser by repository.currentUser.collectAsState()
+    val allUsers by repository.allUsers.collectAsState(initial = emptyList())
     val allActiveItems by repository.getAllActiveItems().collectAsState(initial = emptyList())
     val recentItems by repository.getRecentItems(5).collectAsState(initial = emptyList())
     val uploadTasks by repository.getUploadTasks().collectAsState(initial = emptyList())
@@ -98,6 +109,8 @@ fun DashboardScreen(
 
     var aiInsightText by remember { mutableStateOf("Analyzing vault storage topology with Gemini 3.5 Flash...") }
     var isLoadingInsight by remember { mutableStateOf(false) }
+    var showAccountsQuickSheet by remember { mutableStateOf(false) }
+    var showAddAccountDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(fileCount, totalUsedBytes) {
         if (repository.geminiService.isApiKeyConfigured) {
@@ -146,7 +159,53 @@ fun DashboardScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                GlowingIndicator(text = "Mesh Online")
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Clickable User Account Pill
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+                            .border(1.dp, NeonCyan.copy(alpha = 0.45f), RoundedCornerShape(20.dp))
+                            .clickable { showAccountsQuickSheet = true }
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                            .testTag("dashboard_user_account_pill")
+                    ) {
+                        val initial = currentUser?.username?.take(2)?.uppercase() ?: "AV"
+                        val avatarBg = try {
+                            Color(android.graphics.Color.parseColor(currentUser?.avatarColorHex ?: "#00F5FF"))
+                        } catch (e: Exception) {
+                            NeonCyan
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(22.dp)
+                                .clip(CircleShape)
+                                .background(avatarBg),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = initial,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 9.sp,
+                                color = Color.Black
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = currentUser?.username ?: "Account",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    GlowingIndicator(text = "Online")
+                }
             }
         }
 
@@ -494,5 +553,162 @@ fun DashboardScreen(
         item {
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    if (showAccountsQuickSheet) {
+        AlertDialog(
+            onDismissRequest = { showAccountsQuickSheet = false },
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.ManageAccounts,
+                            contentDescription = null,
+                            tint = NeonCyan,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Vault Accounts")
+                    }
+                    IconButton(onClick = { showAccountsQuickSheet = false }) {
+                        Icon(Icons.Default.Close, contentDescription = "Close")
+                    }
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        "ACTIVE PROFILE",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = NeonCyan,
+                        letterSpacing = 1.sp
+                    )
+
+                    // Current Active Card
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            .border(1.dp, NeonCyan.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                            .padding(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                val initial = currentUser?.username?.take(2)?.uppercase() ?: "AV"
+                                val bg = try {
+                                    Color(android.graphics.Color.parseColor(currentUser?.avatarColorHex ?: "#00F5FF"))
+                                } catch (e: Exception) {
+                                    NeonCyan
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(bg),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(initial, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color.Black)
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(currentUser?.username ?: "User", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                                    Text(currentUser?.email ?: "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            CyberBadge("Active", color = NeonCyan)
+                        }
+                    }
+
+                    // Other accounts
+                    val otherAccounts = allUsers.filter { it.id != currentUser?.id }
+                    if (otherAccounts.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "SWITCH ACCOUNT",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            letterSpacing = 1.sp
+                        )
+
+                        otherAccounts.forEach { acc ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f))
+                                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                    .padding(8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(acc.username, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                                    Text(acc.email, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        repository.switchAccount(acc)
+                                        showAccountsQuickSheet = false
+                                        android.widget.Toast.makeText(context, "Switched to ${acc.username}", android.widget.Toast.LENGTH_SHORT).show()
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                    modifier = Modifier.testTag("dashboard_switch_account_${acc.id}")
+                                ) {
+                                    Icon(Icons.Default.SwapHoriz, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Switch", fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Button(
+                        onClick = {
+                            showAccountsQuickSheet = false
+                            showAddAccountDialog = true
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("dashboard_add_account_button")
+                    ) {
+                        Icon(Icons.Default.PersonAdd, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Add New Vault Account", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAccountsQuickSheet = false }) {
+                    Text("Done")
+                }
+            }
+        )
+    }
+
+    if (showAddAccountDialog) {
+        AddAccountDialog(
+            repository = repository,
+            onDismiss = { showAddAccountDialog = false },
+            onAccountAdded = {
+                showAddAccountDialog = false
+            }
+        )
     }
 }

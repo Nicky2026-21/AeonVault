@@ -31,6 +31,7 @@ class VaultRepository(private val context: Context) {
 
     private val _currentUser = MutableStateFlow<User?>(null)
     val currentUser: StateFlow<User?> = _currentUser.asStateFlow()
+    val allUsers: Flow<List<User>> = dao.getAllUsers()
 
     init {
         scope.launch {
@@ -289,6 +290,70 @@ class VaultRepository(private val context: Context) {
 
     fun logout() {
         _currentUser.value = null
+    }
+
+    fun switchAccount(user: User) {
+        _currentUser.value = user
+    }
+
+    suspend fun switchAccountById(userId: String) = withContext(Dispatchers.IO) {
+        val user = dao.getUserByIdSync(userId)
+        if (user != null) {
+            _currentUser.value = user
+        }
+    }
+
+    suspend fun addAccount(
+        username: String,
+        email: String,
+        password: String,
+        planTier: String = "Æon Prime"
+    ): Result<User> = withContext(Dispatchers.IO) {
+        val existing = dao.getUserByEmail(email.trim().lowercase())
+        if (existing != null) {
+            return@withContext Result.failure(IllegalArgumentException("An account with email '$email' already exists"))
+        }
+        val salt = UUID.randomUUID().toString().take(8)
+        val hash = User.hashPassword(password, salt)
+        val recoveryKey = "AEON-" + UUID.randomUUID().toString().take(12).uppercase()
+
+        val colorOptions = listOf("#00F5FF", "#9D4EDD", "#10B981", "#F59E0B", "#EC4899", "#3B82F6")
+        val chosenColor = colorOptions[Math.abs(email.hashCode()) % colorOptions.size]
+
+        val newUser = User(
+            id = "aeon-usr-" + UUID.randomUUID().toString().take(8),
+            username = username.trim(),
+            email = email.trim().lowercase(),
+            passwordHash = hash,
+            salt = salt,
+            recoveryKey = recoveryKey,
+            quotaUsedBytes = 0L,
+            planTier = planTier,
+            avatarColorHex = chosenColor
+        )
+        dao.insertUser(newUser)
+        seedDefaultVaultData(newUser.id)
+        _currentUser.value = newUser
+
+        dao.insertLog(
+            ActivityLog(
+                id = UUID.randomUUID().toString(),
+                userId = newUser.id,
+                actionType = "ACCOUNT_ADDED",
+                description = "New vault account '$username' added with 1 QB logical quota",
+                targetItemName = username
+            )
+        )
+        Result.success(newUser)
+    }
+
+    suspend fun removeAccount(userId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        dao.deleteUser(userId)
+        if (_currentUser.value?.id == userId) {
+            val remaining = dao.getFirstUser()
+            _currentUser.value = remaining
+        }
+        Result.success(Unit)
     }
 
     // --- File & Folder Operations ---

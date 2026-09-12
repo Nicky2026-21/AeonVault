@@ -6,8 +6,12 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,19 +21,25 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.filled.ManageAccounts
 import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -47,9 +57,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -58,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.User
 import com.example.data.repository.VaultRepository
+import com.example.ui.components.AddAccountDialog
 import com.example.ui.components.CyberBadge
 import com.example.ui.components.GlassCard
 import com.example.ui.components.QuotaDisclaimerCard
@@ -66,6 +80,7 @@ import com.example.ui.theme.CoralNeon
 import com.example.ui.theme.ElectricViolet
 import com.example.ui.theme.EmeraldGlow
 import com.example.ui.theme.NeonCyan
+import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(
@@ -76,12 +91,16 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val currentUser by repository.currentUser.collectAsState()
+    val allUsers by repository.allUsers.collectAsState(initial = emptyList())
 
     var configuredWebUrl by remember { mutableStateOf("https://aeonvaultfilemanager.vercel.app") }
     var isEditingWebUrl by remember { mutableStateOf(false) }
     var tempWebUrl by remember { mutableStateOf("https://aeonvaultfilemanager.vercel.app") }
     var showDeploymentInfoDialog by remember { mutableStateOf(false) }
+    var showAddAccountDialog by remember { mutableStateOf(false) }
+    var userToDelete by remember { mutableStateOf<User?>(null) }
 
     LazyColumn(
         modifier = modifier
@@ -115,11 +134,13 @@ fun SettingsScreen(
             }
         }
 
-        // Account Profile Card
+        // Multi-Account Management & Identity Section
         item {
             GlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                borderColor = NeonCyan.copy(alpha = 0.35f)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("settings_accounts_card"),
+                borderColor = NeonCyan.copy(alpha = 0.4f)
             ) {
                 Column {
                     Row(
@@ -127,53 +148,235 @@ fun SettingsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Account Identity", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        CyberBadge(currentUser?.planTier ?: "Æon Prime", color = ElectricViolet)
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "User: ${currentUser?.username ?: "NexusCommander"}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = "Email: ${currentUser?.email ?: "vault.commander@aeonvaultfilemanager.vercel.app"}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Key, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Recovery Key: ${currentUser?.recoveryKey ?: "AEON-RECOVER-KEY"}",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.weight(1f)
-                        )
-                        IconButton(
-                            onClick = {
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                clipboard.setPrimaryClip(ClipData.newPlainText("Recovery Key", currentUser?.recoveryKey ?: ""))
-                                Toast.makeText(context, "Recovery key copied", Toast.LENGTH_SHORT).show()
-                            }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.ManageAccounts,
+                                contentDescription = null,
+                                tint = NeonCyan,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Vault Accounts (${allUsers.size})",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Button(
+                            onClick = { showAddAccountDialog = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier.testTag("settings_add_account_button")
                         ) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy Recovery Key", modifier = Modifier.size(16.dp))
+                            Icon(
+                                Icons.Default.PersonAdd,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                "Add Account",
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
 
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Active Account Card
+                    Text(
+                        "CURRENT ACTIVE ACCOUNT",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = NeonCyan,
+                        letterSpacing = 1.sp
+                    )
                     Spacer(modifier = Modifier.height(6.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Security, contentDescription = null, tint = EmeraldGlow, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
+                            .border(1.dp, NeonCyan.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                            .padding(12.dp)
+                    ) {
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    val userInitial = currentUser?.username?.take(2)?.uppercase() ?: "AV"
+                                    val avatarBg = try {
+                                        Color(android.graphics.Color.parseColor(currentUser?.avatarColorHex ?: "#00F5FF"))
+                                    } catch (e: Exception) {
+                                        NeonCyan
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .size(38.dp)
+                                            .clip(CircleShape)
+                                            .background(avatarBg),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = userInitial,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = Color.Black
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(
+                                            text = currentUser?.username ?: "NexusCommander",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = currentUser?.email ?: "vault.commander@aeonvaultfilemanager.vercel.app",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                CyberBadge("Active · ${currentUser?.planTier ?: "Æon Prime"}", color = NeonCyan)
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Key, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Recovery Key: ${currentUser?.recoveryKey ?: "AEON-RECOVER-KEY"}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(
+                                    onClick = {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        clipboard.setPrimaryClip(ClipData.newPlainText("Recovery Key", currentUser?.recoveryKey ?: ""))
+                                        Toast.makeText(context, "Recovery key copied", Toast.LENGTH_SHORT).show()
+                                    }
+                                ) {
+                                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy Recovery Key", modifier = Modifier.size(16.dp))
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Security, contentDescription = null, tint = EmeraldGlow, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Permanent account protected · Inactivity deletion prohibited",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = EmeraldGlow,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+
+                    // Other Saved Accounts list (if more than 1)
+                    val otherUsers = allUsers.filter { it.id != currentUser?.id }
+                    if (otherUsers.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(14.dp))
                         Text(
-                            text = "Permanent account protected · Inactivity deletion prohibited",
+                            "OTHER SAVED VAULT ACCOUNTS",
                             style = MaterialTheme.typography.labelSmall,
-                            color = EmeraldGlow,
-                            fontWeight = FontWeight.SemiBold
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            letterSpacing = 1.sp
                         )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            otherUsers.forEach { user ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
+                                        .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), RoundedCornerShape(10.dp))
+                                        .padding(10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        val initial = user.username.take(2).uppercase()
+                                        val bg = try {
+                                            Color(android.graphics.Color.parseColor(user.avatarColorHex))
+                                        } catch (e: Exception) {
+                                            ElectricViolet
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .size(32.dp)
+                                                .clip(CircleShape)
+                                                .background(bg),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = initial,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 11.sp,
+                                                color = Color.Black
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column {
+                                            Text(
+                                                text = user.username,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                            Text(
+                                                text = "${user.email} · ${user.planTier}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                repository.switchAccount(user)
+                                                Toast.makeText(context, "Switched to account '${user.username}'", Toast.LENGTH_SHORT).show()
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                            modifier = Modifier.testTag("switch_account_${user.id}")
+                                        ) {
+                                            Icon(Icons.Default.SwapHoriz, contentDescription = null, modifier = Modifier.size(14.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Switch", fontSize = 11.sp)
+                                        }
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        IconButton(
+                                            onClick = { userToDelete = user },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Delete,
+                                                contentDescription = "Remove account from device",
+                                                tint = CoralNeon.copy(alpha = 0.8f),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -405,6 +608,48 @@ fun SettingsScreen(
             confirmButton = {
                 Button(onClick = { showDeploymentInfoDialog = false }) {
                     Text("Got It")
+                }
+            }
+        )
+    }
+
+    if (showAddAccountDialog) {
+        AddAccountDialog(
+            repository = repository,
+            onDismiss = { showAddAccountDialog = false },
+            onAccountAdded = { newAccount ->
+                showAddAccountDialog = false
+            }
+        )
+    }
+
+    if (userToDelete != null) {
+        val target = userToDelete!!
+        AlertDialog(
+            onDismissRequest = { userToDelete = null },
+            title = { Text("Remove Account from Device?") },
+            text = {
+                Text(
+                    "Are you sure you want to remove '${target.username}' (${target.email}) from this device?\n\nYour encrypted files in the vault partition remain safely preserved on the distributed mesh network."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        scope.launch {
+                            repository.removeAccount(target.id)
+                            Toast.makeText(context, "Account '${target.username}' removed from device", Toast.LENGTH_SHORT).show()
+                            userToDelete = null
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = CoralNeon)
+                ) {
+                    Text("Remove", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { userToDelete = null }) {
+                    Text("Cancel")
                 }
             }
         )
