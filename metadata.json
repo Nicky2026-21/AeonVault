@@ -1,0 +1,6 @@
+{
+  "name": "ÆonVault",
+  "description": "The Vault That Never Forgets — Futuristic cloud storage platform with 1 QB logical quota, high-speed resumable uploads, and Gemini AI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
