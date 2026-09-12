@@ -22,12 +22,15 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Divider
@@ -35,11 +38,16 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -53,6 +61,7 @@ import com.example.data.repository.VaultRepository
 import com.example.ui.components.CyberBadge
 import com.example.ui.components.GlassCard
 import com.example.ui.components.QuotaDisclaimerCard
+import com.example.ui.theme.AmberAlert
 import com.example.ui.theme.CoralNeon
 import com.example.ui.theme.ElectricViolet
 import com.example.ui.theme.EmeraldGlow
@@ -68,6 +77,11 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val currentUser by repository.currentUser.collectAsState()
+
+    var configuredWebUrl by remember { mutableStateOf("https://aeonvaultfilemanager.vercel.app") }
+    var isEditingWebUrl by remember { mutableStateOf(false) }
+    var tempWebUrl by remember { mutableStateOf("https://aeonvaultfilemanager.vercel.app") }
+    var showDeploymentInfoDialog by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = modifier
@@ -92,7 +106,7 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "Infrastructure · Quota · Official Domain",
+                        text = "Infrastructure · Quota · Web Deployment",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -123,7 +137,7 @@ fun SettingsScreen(
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = "Email: ${currentUser?.email ?: "vault.commander@aeonvault.vercel.app"}",
+                        text = "Email: ${currentUser?.email ?: "vault.commander@aeonvaultfilemanager.vercel.app"}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -223,56 +237,102 @@ fun SettingsScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Language, contentDescription = null, tint = ElectricViolet, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Official Domain & Web App", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text("Web App & Vercel Deployment", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         }
-                        CyberBadge("aeonvault.vercel.app", color = ElectricViolet)
+                        CyberBadge("Deployment Guide", color = ElectricViolet)
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Official Web Platform: https://aeonvault.vercel.app",
+                        text = "Target Domain: $configuredWebUrl",
                         style = MaterialTheme.typography.bodyMedium,
                         fontFamily = FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "The web application works independently from the Android app and is accessible from Android, iPhone, iPad, Windows, macOS, Linux, and all modern browsers.",
+                        text = "The web application works independently from the Android app across browsers (Safari, Chrome, Edge, Firefox) on Android, iOS, iPad, macOS, Linux, and Windows.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // Helpful Vercel DEPLOYMENT_NOT_FOUND explanation box
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldGlow, modifier = Modifier.size(14.dp))
+                            Icon(Icons.Default.Info, contentDescription = null, tint = AmberAlert, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Domain Status: Ready & Verified (aeonvault.vercel.app)", style = MaterialTheme.typography.labelSmall)
+                            Text(
+                                text = "Notice: 'DEPLOYMENT_NOT_FOUND' occurs until the repository is deployed to Vercel.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = AmberAlert
+                            )
                         }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldGlow, modifier = Modifier.size(14.dp))
+                        TextButton(
+                            onClick = { showDeploymentInfoDialog = true },
+                            modifier = Modifier.align(Alignment.Start)
+                        ) {
+                            Icon(Icons.Default.HelpOutline, contentDescription = null, modifier = Modifier.size(16.dp), tint = NeonCyan)
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("HTTPS/TLS & DNS: Automated Cloudflare Anycast", style = MaterialTheme.typography.labelSmall)
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldGlow, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Android App Links & Deep Links: Active", style = MaterialTheme.typography.labelSmall)
+                            Text("How to Fix DEPLOYMENT_NOT_FOUND & Deploy", color = NeonCyan, fontSize = 12.sp)
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    if (isEditingWebUrl) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = tempWebUrl,
+                            onValueChange = { tempWebUrl = it },
+                            label = { Text("Web App URL / Custom Domain") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = {
+                                    if (tempWebUrl.isNotBlank()) {
+                                        configuredWebUrl = tempWebUrl.trim()
+                                        isEditingWebUrl = false
+                                        Toast.makeText(context, "Updated Web URL", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            ) {
+                                Text("Save URL")
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    configuredWebUrl = "https://aeonvaultfilemanager.vercel.app"
+                                    tempWebUrl = "https://aeonvaultfilemanager.vercel.app"
+                                    isEditingWebUrl = false
+                                }
+                            ) {
+                                Text("Reset Default")
+                            }
+                        }
+                    } else {
+                        TextButton(onClick = { isEditingWebUrl = true; tempWebUrl = configuredWebUrl }) {
+                            Text("Edit or Change Web URL", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
                     Button(
                         onClick = {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://aeonvault.vercel.app"))
-                            context.startActivity(intent)
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(configuredWebUrl))
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Cannot open URL: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                         modifier = Modifier.fillMaxWidth().testTag("launch_aeonvault_web_button")
                     ) {
                         Icon(Icons.Default.OpenInBrowser, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Open Official Web Version (aeonvault.vercel.app)", color = MaterialTheme.colorScheme.onPrimary)
+                        Text("Open Web Version in Browser", color = MaterialTheme.colorScheme.onPrimary)
                     }
                 }
             }
@@ -315,5 +375,38 @@ fun SettingsScreen(
         item {
             Spacer(modifier = Modifier.height(32.dp))
         }
+    }
+
+    if (showDeploymentInfoDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeploymentInfoDialog = false },
+            title = { Text("Why DEPLOYMENT_NOT_FOUND Happens") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Vercel returns 'DEPLOYMENT_NOT_FOUND' because Vercel requires connecting the repository to an active Vercel project deployment.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = "How to Deploy to Vercel in 3 Steps:\n" +
+                                "1. Export this repository or push to your GitHub account.\n" +
+                                "2. Log into https://vercel.com/new and click 'Import' for your repository.\n" +
+                                "3. Set the project name to 'aeonvaultfilemanager' and click 'Deploy'. The included vercel.json and public/index.html will instantly build and serve the live web application!",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "If your deployment generates a different URL, you can paste it into 'Edit Web URL' above.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = NeonCyan
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showDeploymentInfoDialog = false }) {
+                    Text("Got It")
+                }
+            }
+        )
     }
 }

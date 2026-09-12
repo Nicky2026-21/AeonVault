@@ -23,7 +23,7 @@ data class ShareLink(
     val isRevoked: Boolean = false
 ) {
     val shareUrl: String
-        get() = "https://aeonvault.vercel.app/share/$id"
+        get() = "https://aeonvaultfilemanager.vercel.app/share/$id"
 
     val isExpired: Boolean
         get() = expiresAt != null && System.currentTimeMillis() > expiresAt

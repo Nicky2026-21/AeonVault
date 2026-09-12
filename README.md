@@ -4,7 +4,7 @@ The Vault That Never Forgets.
 
 ÆonVault is a futuristic cloud-storage platform designed around high-speed uploads, persistent accounts, cross-platform access, and AI-powered file management.
 
-🌐 Website: https://aeonvault.app
+🌐 Website: https://aeonvaultfilemanager.vercel.app
 
 📱 Native Android: Available as a genuine Android application
 
@@ -136,7 +136,7 @@ Android features include:
 
 The Android app can launch the full web version at:
 
-https://aeonvault.app
+https://aeonvaultfilemanager.vercel.app
 
 ---
 
@@ -144,7 +144,7 @@ https://aeonvault.app
 
 The ÆonVault web application is independently accessible through:
 
-https://aeonvault.app
+https://aeonvaultfilemanager.vercel.app
 
 It is designed for:
 
@@ -158,6 +158,20 @@ It is designed for:
 - Modern mobile browsers
 
 The website does not require the Android application.
+
+### 🚀 Deploying to Vercel (Resolving DEPLOYMENT_NOT_FOUND)
+
+If you see a `DEPLOYMENT_NOT_FOUND` error when visiting `https://aeonvaultfilemanager.vercel.app`, this means the project repository has not yet been linked and deployed to a Vercel project.
+
+To activate the deployment:
+1. **Push or Import to GitHub**: Push this repository to your GitHub account (or export the project).
+2. **Import into Vercel**:
+   - Go to [vercel.com/new](https://vercel.com/new).
+   - Select your GitHub repository.
+   - Set the Project Name to `aeonvaultfilemanager` (or assign `aeonvaultfilemanager.vercel.app` under **Project Settings → Domains**).
+3. **Deploy**:
+   - The included `vercel.json` and static web application in `/public` (`index.html`, `style.css`, `app.js`) will deploy automatically.
+   - Once deployed, the live web app with 1 QB logical storage, upload streams, and Gemini Assistant is active.
 
 ---
 
@@ -249,11 +263,11 @@ Security features include:
 
 🏗️ Architecture
 
-                    ┌─────────────────────┐
-                    │     ÆonVault Web    │
-                    │  https://aeonvault  │
-                    │        .app         │
-                    └──────────┬──────────┘
+                    ┌─────────────────────────┐
+                    │      ÆonVault Web       │
+                    │  https://aeonvault      │
+                    │  filemanager.vercel.app │
+                    └───────────┬─────────────┘
                                │
 ┌─────────────────┐            │            ┌─────────────────┐
 │ Native Android  │────────────┼────────────│ iOS / iPadOS   │

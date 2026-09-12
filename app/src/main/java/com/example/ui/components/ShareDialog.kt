@@ -201,7 +201,7 @@ fun ShareDialog(
                     onClick = {
                         onConfirmCreateShare(accessType, isPasswordProtected, password.ifBlank { null }, allowDownload, expiryHours)
                         val sampleId = java.util.UUID.randomUUID().toString().take(10)
-                        createdShareUrl = "https://aeonvault.vercel.app/share/$sampleId"
+                        createdShareUrl = "https://aeonvaultfilemanager.vercel.app/share/$sampleId"
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                     modifier = Modifier.testTag("create_share_link_confirm_button")

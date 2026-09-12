@@ -41,7 +41,7 @@ class VaultRepository(private val context: Context) {
                 val defaultUser = User(
                     id = "aeon-usr-core-01",
                     username = "NexusCommander",
-                    email = "vault.commander@aeonvault.vercel.app",
+                    email = "vault.commander@aeonvaultfilemanager.vercel.app",
                     passwordHash = User.hashPassword("AeonVault2026!", defaultSalt),
                     salt = defaultSalt,
                     recoveryKey = "AEON-9842-QUANTUM-RECOVER-7719",
@@ -153,7 +153,7 @@ class VaultRepository(private val context: Context) {
                 aiCategory = "DOCUMENT",
                 aiTags = "mission, markdown, roadmap, 2026",
                 aiSummary = "Comprehensive overview of deep space communication relays and cloud synchronizer benchmarks.",
-                textContentPreview = "# Orbital Mission Briefing\n\n## Objectives\n- Verify continuous connection to https://aeonvault.vercel.app\n- Test 1 QB logical quota provisioning across all regional nodes\n- Zero data degradation guarantees verified"
+                textContentPreview = "# Orbital Mission Briefing\n\n## Objectives\n- Verify continuous connection to https://aeonvaultfilemanager.vercel.app\n- Test 1 QB logical quota provisioning across all regional nodes\n- Zero data degradation guarantees verified"
             ),
             VaultItem(
                 id = UUID.randomUUID().toString(),

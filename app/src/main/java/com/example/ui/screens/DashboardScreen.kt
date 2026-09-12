@@ -430,11 +430,11 @@ fun DashboardScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Official ÆonVault Web", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                        Text("Independent web app at https://aeonvault.vercel.app", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Independent web app at https://aeonvaultfilemanager.vercel.app", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     OutlinedButton(
                         onClick = {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://aeonvault.vercel.app"))
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://aeonvaultfilemanager.vercel.app"))
                             context.startActivity(intent)
                         },
                         modifier = Modifier.testTag("open_web_version_button")

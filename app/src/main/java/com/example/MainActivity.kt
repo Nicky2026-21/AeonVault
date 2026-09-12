@@ -116,7 +116,7 @@ class MainActivity : ComponentActivity() {
     private fun handleIncomingIntents(intent: Intent?) {
         if (intent == null) return
 
-        // Check for Deep Links (e.g., https://aeonvault.vercel.app or aeonvault://)
+        // Check for Deep Links (e.g., https://aeonvaultfilemanager.vercel.app or aeonvault://)
         val data: Uri? = intent.data
         if (data != null) {
             val path = data.path
