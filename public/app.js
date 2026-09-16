@@ -1,6 +1,43 @@
 // ÆonVault Web Application Core
 const VAULT_KEY = "aeonvault_state_v1";
 const SESSION_KEY = "aeonvault_session_token";
+const FIREBASE_CONFIG = {
+  apiKey: "REPLACE_WITH_YOUR_API_KEY",
+  authDomain: "REPLACE_WITH_YOUR_PROJECT_ID.firebaseapp.com",
+  projectId: "REPLACE_WITH_YOUR_PROJECT_ID",
+  storageBucket: "REPLACE_WITH_YOUR_PROJECT_ID.appspot.com",
+  messagingSenderId: "REPLACE_WITH_YOUR_SENDER_ID",
+  appId: "REPLACE_WITH_YOUR_APP_ID"
+};
+
+let db = null;
+try {
+  if (typeof firebase !== 'undefined') {
+    firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.firestore();
+    console.log("ÆonVault Cloud Sync active.");
+  }
+} catch (e) {
+  console.warn("Firebase not configured. Cloud sync disabled.", e);
+}
+
+async function syncToFirestore(collection, id, data) {
+  if (!db) return;
+  try {
+    await db.collection(collection).doc(id).set(data, { merge: true });
+  } catch (e) {
+    console.error(`Error syncing ${collection}/${id}:`, e);
+  }
+}
+
+async function deleteFromFirestore(collection, id) {
+  if (!db) return;
+  try {
+    await db.collection(collection).doc(id).delete();
+  } catch (e) {
+    console.error(`Error deleting ${collection}/${id}:`, e);
+  }
+}
 
 const defaultState = {
   user: {
@@ -247,6 +284,8 @@ function performSignup() {
 
   vault.accounts.push(newAcc);
   vault.user = newAcc;
+  
+  syncToFirestore("users", newAcc.id, newAcc);
   
   const token = {
     userId: newAcc.id,
@@ -601,6 +640,7 @@ function simulateUpload(name, size) {
         summary: "Newly uploaded object indexed across distributed quantum storage mesh."
       };
       vault.files.unshift(newFile);
+      syncToFirestore("vault_items", newFile.id, { ...newFile, userId: vault.user.id });
       vault.user.quotaUsedBytes += task.size;
       vault.activities.unshift({
         id: "a_" + Date.now(),
@@ -659,6 +699,7 @@ function clearCompletedUploads() {
 
 function deleteFile(id) {
   vault.files = vault.files.filter(f => f.id !== id);
+  deleteFromFirestore("vault_items", id);
   saveVault();
   renderVaultFiles();
   renderRecentFiles();

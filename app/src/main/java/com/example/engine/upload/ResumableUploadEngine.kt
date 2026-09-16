@@ -3,6 +3,7 @@ package com.example.engine.upload
 import android.content.Context
 import android.net.Uri
 import com.example.data.local.VaultDao
+import com.example.data.remote.FirestoreManager
 import com.example.data.model.ActivityLog
 import com.example.data.model.UploadStatus
 import com.example.data.model.UploadTask
@@ -27,7 +28,8 @@ import kotlin.math.max
 class ResumableUploadEngine(
     private val context: Context,
     private val vaultDao: VaultDao,
-    private val geminiService: GeminiService
+    private val geminiService: GeminiService,
+    private val firestoreManager: FirestoreManager
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val activeJobs = ConcurrentHashMap<String, Job>()
@@ -292,6 +294,7 @@ class ResumableUploadEngine(
                 aiSummary = "Securely encrypted with AES-256-GCM and replicated across Æon Distributed Storage mesh."
             )
             vaultDao.insertItem(newItem)
+            scope.launch { firestoreManager.syncVaultItem(newItem) }
 
             // Update user quota
             val totalUsed = vaultDao.calculateUsedBytes(userId)
@@ -323,6 +326,7 @@ class ResumableUploadEngine(
                             aiTags = updatedTags
                         )
                         vaultDao.updateItem(enrichedItem)
+                        scope.launch { firestoreManager.syncVaultItem(enrichedItem) }
                     }
                 }
             }

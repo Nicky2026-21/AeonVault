@@ -28,6 +28,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
 
+import com.example.data.remote.FirestoreManager
 import android.content.SharedPreferences
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -38,7 +39,8 @@ class VaultRepository(private val context: Context) {
     val db = AppDatabase.getDatabase(context)
     val dao: VaultDao = db.vaultDao()
     val geminiService = GeminiService()
-    val uploadEngine = ResumableUploadEngine(context, dao, geminiService)
+    val firestoreManager = FirestoreManager()
+    val uploadEngine = ResumableUploadEngine(context, dao, geminiService, firestoreManager)
     val syncManager = VaultSyncManager(context, dao)
     val syncState: StateFlow<SyncState> = syncManager.syncState
 
@@ -283,6 +285,7 @@ class VaultRepository(private val context: Context) {
             avatarColorHex = "#00F5FF"
         )
         dao.insertUser(newUser)
+        scope.launch { firestoreManager.syncUser(newUser) }
         seedDefaultVaultData(newUser.id)
         _currentUser.value = newUser
         saveLastActiveUser(newUser.id)
@@ -398,6 +401,7 @@ class VaultRepository(private val context: Context) {
             avatarColorHex = chosenColor
         )
         dao.insertUser(newUser)
+        scope.launch { firestoreManager.syncUser(newUser) }
         seedDefaultVaultData(newUser.id)
         _currentUser.value = newUser
         saveLastActiveUser(newUser.id)
@@ -593,6 +597,7 @@ class VaultRepository(private val context: Context) {
             aiSummary = "Directory container for vault items."
         )
         dao.insertItem(folder)
+        scope.launch { firestoreManager.syncVaultItem(folder) }
         dao.insertLog(
             ActivityLog(
                 id = UUID.randomUUID().toString(),
@@ -638,6 +643,7 @@ class VaultRepository(private val context: Context) {
         val ext = if (item.isFolder) "" else newName.substringAfterLast('.', item.extension)
         val updated = item.copy(name = newName, extension = ext, modifiedAt = System.currentTimeMillis())
         dao.updateItem(updated)
+        scope.launch { firestoreManager.syncVaultItem(updated) }
         dao.insertLog(
             ActivityLog(
                 id = UUID.randomUUID().toString(),
@@ -652,6 +658,7 @@ class VaultRepository(private val context: Context) {
     suspend fun moveItem(item: VaultItem, targetFolderId: String?) = withContext(Dispatchers.IO) {
         val updated = item.copy(parentId = targetFolderId, modifiedAt = System.currentTimeMillis())
         dao.updateItem(updated)
+        scope.launch { firestoreManager.syncVaultItem(updated) }
         dao.insertLog(
             ActivityLog(
                 id = UUID.randomUUID().toString(),
@@ -666,6 +673,7 @@ class VaultRepository(private val context: Context) {
     suspend fun toggleFavorite(item: VaultItem) = withContext(Dispatchers.IO) {
         val updated = item.copy(isFavorite = !item.isFavorite)
         dao.updateItem(updated)
+        scope.launch { firestoreManager.syncVaultItem(updated) }
         dao.insertLog(
             ActivityLog(
                 id = UUID.randomUUID().toString(),
@@ -684,6 +692,7 @@ class VaultRepository(private val context: Context) {
             modifiedAt = System.currentTimeMillis()
         )
         dao.updateItem(updated)
+        scope.launch { firestoreManager.syncVaultItem(updated) }
         refreshQuota(item.userId)
         dao.insertLog(
             ActivityLog(
@@ -703,6 +712,7 @@ class VaultRepository(private val context: Context) {
             modifiedAt = System.currentTimeMillis()
         )
         dao.updateItem(updated)
+        scope.launch { firestoreManager.syncVaultItem(updated) }
         refreshQuota(item.userId)
         dao.insertLog(
             ActivityLog(
@@ -717,6 +727,7 @@ class VaultRepository(private val context: Context) {
 
     suspend fun permanentlyDelete(item: VaultItem) = withContext(Dispatchers.IO) {
         dao.deleteItem(item)
+        scope.launch { firestoreManager.deleteVaultItem(item.id) }
         refreshQuota(item.userId)
         dao.insertLog(
             ActivityLog(
