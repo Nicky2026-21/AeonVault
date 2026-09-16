@@ -199,6 +199,13 @@ fun DashboardScreen(
                         }
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
+                            text = currentUser?.username ?: "Not Logged In",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
                             text = currentUser?.username ?: "Account",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.SemiBold,
