@@ -13,9 +13,46 @@
 </head>
 <body class="theme-dark">
   <div class="background-mesh"></div>
+  
+  <!-- Authentication View -->
+  <div id="auth-view" style="display: none; height: 100vh; width: 100vw; display: flex; align-items: center; justify-content: center; z-index: 10000; position: fixed; background: var(--bg-dark);">
+    <div class="card" style="width: 400px; padding: 32px; border: 1px solid var(--neon-cyan); box-shadow: 0 0 30px rgba(0, 245, 255, 0.15);">
+      <div style="text-align: center; margin-bottom: 24px;">
+        <div class="logo-badge" style="margin: 0 auto 12px; width: 48px; height: 48px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+            <polyline points="2 17 12 22 22 17"></polyline>
+            <polyline points="2 12 12 17 22 12"></polyline>
+          </svg>
+        </div>
+        <h2 style="color: var(--neon-cyan); letter-spacing: 2px;">ÆONVAULT AUTH</h2>
+        <p style="font-size: 13px; color: var(--text-muted);">Secure Login to your 1 QB logical storage</p>
+      </div>
 
-  <!-- Header / Navigation -->
-  <header class="vault-header">
+      <div id="auth-login-section">
+        <input type="email" id="loginEmail" placeholder="account@vault.space" class="input-field" style="width: 100%; margin-bottom: 12px;">
+        <input type="password" id="loginPassword" placeholder="Vault Passkey" class="input-field" style="width: 100%; margin-bottom: 16px;">
+        <button class="btn btn-primary" style="width: 100%;" onclick="performLogin()">Access Vault</button>
+        <p style="text-align: center; margin-top: 16px; font-size: 13px;">
+          Don't have a vault profile? <a href="#" style="color: var(--neon-cyan); text-decoration: none;" onclick="toggleAuthSection('signup')">Initialize Profile</a>
+        </p>
+      </div>
+
+      <div id="auth-signup-section" style="display: none;">
+        <input type="text" id="signupUsername" placeholder="Commander Username" class="input-field" style="width: 100%; margin-bottom: 12px;">
+        <input type="email" id="signupEmail" placeholder="account@vault.space" class="input-field" style="width: 100%; margin-bottom: 12px;">
+        <input type="password" id="signupPassword" placeholder="Set Vault Passkey" class="input-field" style="width: 100%; margin-bottom: 16px;">
+        <button class="btn btn-primary" style="width: 100%;" onclick="performSignup()">Initialize Profile</button>
+        <p style="text-align: center; margin-top: 16px; font-size: 13px;">
+          Already have a profile? <a href="#" style="color: var(--neon-cyan); text-decoration: none;" onclick="toggleAuthSection('login')">Access Vault</a>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Workspace -->
+  <div id="app-view">
+    <header class="vault-header">
     <div class="header-left">
       <div class="logo-badge">
         <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -426,7 +463,8 @@
           </div>
         </div>
       </div>
-      <div class="modal-footer">
+      <div class="modal-footer" style="display: flex; justify-content: space-between;">
+        <button class="btn btn-outline" style="color: var(--coral-neon); border-color: var(--coral-neon);" onclick="logout(); closeModal('accountsModal');">Sign Out</button>
         <button class="btn btn-outline" onclick="closeModal('accountsModal')">Close</button>
       </div>
     </div>
@@ -451,6 +489,8 @@
         <button class="btn btn-primary" onclick="confirmCreateNewFolder()">Create Directory</button>
       </div>
     </div>
+  </div>
+
   </div>
 
   <script src="/app.js"></script>

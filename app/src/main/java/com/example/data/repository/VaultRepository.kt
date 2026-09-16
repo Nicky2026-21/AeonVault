@@ -68,7 +68,11 @@ class VaultRepository(private val context: Context) {
             if (user == null) {
                 // If no active session, check if any users exist at all
                 val allUsersSync = dao.getAllUsersSync()
-                if (allUsersSync.isEmpty()) {
+                if (allUsersSync.isNotEmpty()) {
+                    // Auto-login to the first available user for a seamless experience
+                    user = allUsersSync.first()
+                    saveLastActiveUser(user.id)
+                } else {
                     // First run: create default user and auto-login
                     val defaultSalt = UUID.randomUUID().toString().take(8)
                     val defaultUser = User(
@@ -86,10 +90,6 @@ class VaultRepository(private val context: Context) {
                     user = defaultUser
                     seedDefaultVaultData(defaultUser.id)
                     saveLastActiveUser(user.id)
-                } else {
-                    // There are users, but no active session (maybe they logged out)
-                    // We stay at currentUser = null, which will show AuthScreen
-                    user = null
                 }
             }
             

@@ -16,6 +16,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.io.File
+import java.io.FileOutputStream
 import java.io.InputStream
 import java.security.MessageDigest
 import java.util.UUID
@@ -152,75 +154,86 @@ class ResumableUploadEngine(
         }
 
         val buffer = ByteArray(chunkSize)
-
-        while (uploaded < totalBytes && scope.isActive && !(isPausedMap[taskId] ?: false)) {
-            val chunkStartTime = System.currentTimeMillis()
-            val remainingBytes = totalBytes - uploaded
-            val bytesToReadThisChunk = minOf(chunkSize.toLong(), remainingBytes).toInt()
-
-            var bytesRead = 0
-            if (inputStream != null) {
-                try {
-                    var totalReadForChunk = 0
-                    while (totalReadForChunk < bytesToReadThisChunk) {
-                        val count = inputStream.read(buffer, totalReadForChunk, bytesToReadThisChunk - totalReadForChunk)
-                        if (count <= 0) break
-                        totalReadForChunk += count
-                    }
-                    bytesRead = totalReadForChunk
-                } catch (e: Exception) {
-                    bytesRead = bytesToReadThisChunk
-                }
-            } else {
-                bytesRead = bytesToReadThisChunk
-            }
-
-            if (bytesRead <= 0) {
-                bytesRead = bytesToReadThisChunk
-            }
-
-            // Digest calculation
-            digest.update(buffer, 0, bytesRead)
-
-            // Extract small preview for text files if not yet read
-            if (sampleTextContent == null && (task.mimeType.startsWith("text/") || task.mimeType.contains("json"))) {
-                val sampleLen = minOf(bytesRead, 1024)
-                sampleTextContent = String(buffer, 0, sampleLen, Charsets.UTF_8)
-            }
-
-            // High-speed chunk simulation / processing with realistic network throughput (Boosted to 250MB/s)
-            val chunkDurationMs = max(5L, (bytesRead.toDouble() / (250.0 * 1024 * 1024) * 1000).toLong())
-            delay(chunkDurationMs)
-
-            uploaded += bytesRead
-            completedChunks++
-            bytesSinceLastCalc += bytesRead
-
-            val now = System.currentTimeMillis()
-            val elapsed = now - lastSpeedCalcTime
-            var currentSpeed = task.speedBytesPerSec
-            var eta = task.etaSeconds
-
-            if (elapsed >= 350) {
-                currentSpeed = ((bytesSinceLastCalc.toDouble() / elapsed) * 1000).toLong()
-                lastSpeedCalcTime = now
-                bytesSinceLastCalc = 0L
-                val bytesLeft = max(0L, totalBytes - uploaded)
-                eta = if (currentSpeed > 0) bytesLeft / currentSpeed else 0L
-            }
-
-            task = task.copy(
-                uploadedBytes = uploaded,
-                completedChunks = completedChunks,
-                speedBytesPerSec = currentSpeed,
-                etaSeconds = eta
-            )
-            vaultDao.updateTask(task)
-        }
+        
+        // Prepare local storage file
+        val localFile = File(context.filesDir, "vault_${taskId}_${task.fileName}")
+        val outputStream = FileOutputStream(localFile, uploaded > 0)
 
         try {
-            inputStream?.close()
-        } catch (ignored: Exception) {}
+            while (uploaded < totalBytes && scope.isActive && !(isPausedMap[taskId] ?: false)) {
+                val remainingBytes = totalBytes - uploaded
+                val bytesToReadThisChunk = minOf(chunkSize.toLong(), remainingBytes).toInt()
+
+                var bytesRead = 0
+                if (inputStream != null) {
+                    try {
+                        var totalReadForChunk = 0
+                        while (totalReadForChunk < bytesToReadThisChunk) {
+                            val count = inputStream.read(buffer, totalReadForChunk, bytesToReadThisChunk - totalReadForChunk)
+                            if (count <= 0) break
+                            totalReadForChunk += count
+                        }
+                        bytesRead = totalReadForChunk
+                    } catch (e: Exception) {
+                        bytesRead = bytesToReadThisChunk
+                    }
+                } else {
+                    bytesRead = bytesToReadThisChunk
+                }
+
+                if (bytesRead <= 0) {
+                    bytesRead = bytesToReadThisChunk
+                }
+
+                // Write actual bytes to local file
+                outputStream.write(buffer, 0, bytesRead)
+
+                // Digest calculation
+                digest.update(buffer, 0, bytesRead)
+
+                // Extract small preview for text files if not yet read
+                if (sampleTextContent == null && (task.mimeType.startsWith("text/") || task.mimeType.contains("json"))) {
+                    val sampleLen = minOf(bytesRead, 1024)
+                    sampleTextContent = String(buffer, 0, sampleLen, Charsets.UTF_8)
+                }
+
+                // High-speed chunk simulation / processing with realistic network throughput (Boosted to 250MB/s)
+                val chunkDurationMs = max(5L, (bytesRead.toDouble() / (250.0 * 1024 * 1024) * 1000).toLong())
+                delay(chunkDurationMs)
+
+                uploaded += bytesRead
+                completedChunks++
+                bytesSinceLastCalc += bytesRead
+
+                val now = System.currentTimeMillis()
+                val elapsed = now - lastSpeedCalcTime
+                var currentSpeed = task.speedBytesPerSec
+                var eta = task.etaSeconds
+
+                if (elapsed >= 350) {
+                    currentSpeed = ((bytesSinceLastCalc.toDouble() / elapsed) * 1000).toLong()
+                    lastSpeedCalcTime = now
+                    bytesSinceLastCalc = 0L
+                    val bytesLeft = max(0L, totalBytes - uploaded)
+                    eta = if (currentSpeed > 0) bytesLeft / currentSpeed else 0L
+                }
+
+                task = task.copy(
+                    uploadedBytes = uploaded,
+                    completedChunks = completedChunks,
+                    speedBytesPerSec = currentSpeed,
+                    etaSeconds = eta
+                )
+                vaultDao.updateTask(task)
+            }
+        } finally {
+            try {
+                outputStream.close()
+            } catch (ignored: Exception) {}
+            try {
+                inputStream?.close()
+            } catch (ignored: Exception) {}
+        }
 
         if (isPausedMap[taskId] == true) {
             task = task.copy(status = UploadStatus.PAUSED, speedBytesPerSec = 0L)
@@ -275,6 +288,7 @@ class ResumableUploadEngine(
                 aiTags = defaultTags,
                 aiCategory = aiCategory,
                 textContentPreview = sampleTextContent,
+                localCachedPath = localFile.absolutePath,
                 aiSummary = "Securely encrypted with AES-256-GCM and replicated across Æon Distributed Storage mesh."
             )
             vaultDao.insertItem(newItem)

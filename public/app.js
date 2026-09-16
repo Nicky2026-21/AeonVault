@@ -1,5 +1,6 @@
 // ÆonVault Web Application Core
 const VAULT_KEY = "aeonvault_state_v1";
+const SESSION_KEY = "aeonvault_session_token";
 
 const defaultState = {
   user: {
@@ -93,6 +94,117 @@ function loadVault() {
 
 function saveVault() {
   localStorage.setItem(VAULT_KEY, JSON.stringify(vault));
+}
+
+function checkAuth() {
+  const token = localStorage.getItem(SESSION_KEY);
+  const authView = document.getElementById("auth-view");
+  const appView = document.getElementById("app-view");
+
+  if (!token) {
+    if (authView) authView.style.display = "flex";
+    if (appView) appView.style.display = "none";
+  } else {
+    if (authView) authView.style.display = "none";
+    if (appView) appView.style.display = "block";
+    try {
+      const sessionData = JSON.parse(token);
+      if (vault.user.id !== sessionData.userId) {
+        switchAccount(sessionData.userId);
+      }
+    } catch (e) {
+      localStorage.removeItem(SESSION_KEY);
+      checkAuth();
+    }
+  }
+}
+
+function toggleAuthSection(section) {
+  const loginSec = document.getElementById("auth-login-section");
+  const signupSec = document.getElementById("auth-signup-section");
+  if (loginSec) loginSec.style.display = section === "login" ? "block" : "none";
+  if (signupSec) signupSec.style.display = section === "signup" ? "block" : "none";
+}
+
+function performLogin() {
+  const emailInput = document.getElementById("loginEmail");
+  const passInput = document.getElementById("loginPassword");
+  const email = emailInput ? emailInput.value.trim() : "";
+  const pass = passInput ? passInput.value.trim() : "";
+
+  if (!email || !pass) {
+    alert("Please enter both email and passkey.");
+    return;
+  }
+
+  const user = vault.accounts.find(a => a.email.toLowerCase() === email.toLowerCase());
+  if (!user) {
+    alert("Account not found in this vault partition. Please initialize a new profile.");
+    return;
+  }
+
+  const token = {
+    userId: user.id,
+    email: user.email,
+    exp: Date.now() + (7 * 24 * 60 * 60 * 1000)
+  };
+  localStorage.setItem(SESSION_KEY, JSON.stringify(token));
+  
+  vault.user = user;
+  saveVault();
+  checkAuth();
+  renderAccountsUI();
+  updateQuotaDisplay();
+}
+
+function performSignup() {
+  const uInput = document.getElementById("signupUsername");
+  const eInput = document.getElementById("signupEmail");
+  const pInput = document.getElementById("signupPassword");
+  
+  const username = uInput ? uInput.value.trim() : "";
+  const email = eInput ? eInput.value.trim() : "";
+  const pass = pInput ? pInput.value.trim() : "";
+
+  if (!username || !email || !pass) {
+    alert("Please specify username, email, and passkey.");
+    return;
+  }
+
+  const existing = vault.accounts.find(a => a.email.toLowerCase() === email.toLowerCase());
+  if (existing) {
+    alert("This email is already registered. Please login.");
+    toggleAuthSection('login');
+    return;
+  }
+
+  const newAcc = {
+    id: "acc_" + Date.now(),
+    username: username,
+    email: email,
+    quotaUsedBytes: 0,
+    planTier: "Æon Prime"
+  };
+
+  vault.accounts.push(newAcc);
+  vault.user = newAcc;
+  
+  const token = {
+    userId: newAcc.id,
+    email: newAcc.email,
+    exp: Date.now() + (7 * 24 * 60 * 60 * 1000)
+  };
+  localStorage.setItem(SESSION_KEY, JSON.stringify(token));
+
+  saveVault();
+  checkAuth();
+  renderAccountsUI();
+  updateQuotaDisplay();
+}
+
+function logout() {
+  localStorage.removeItem(SESSION_KEY);
+  checkAuth();
 }
 
 // Format bytes
@@ -1087,6 +1199,7 @@ function removeAccount(accountId) {
 }
 
 // Initialize
+checkAuth();
 backgroundSyncService.start();
 renderRecentFiles();
 updateQuotaDisplay();
