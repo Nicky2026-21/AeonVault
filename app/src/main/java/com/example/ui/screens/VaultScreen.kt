@@ -236,6 +236,7 @@ fun VaultScreen(
                             .clickable {
                                 currentFolderId = crumb.id
                                 breadcrumbs = breadcrumbs.take(index + 1)
+                                selectedCategory = "ALL"
                             }
                             .padding(vertical = 4.dp, horizontal = 2.dp)
                     )
@@ -414,21 +415,33 @@ fun VaultScreen(
                     value = newFolderName,
                     onValueChange = { newFolderName = it },
                     label = { Text("Directory Name") },
+                    placeholder = { Text("e.g., Cryptographic Keys") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("new_directory_name_input")
                 )
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        if (newFolderName.isNotBlank()) {
+                        val trimmed = newFolderName.trim()
+                        if (trimmed.isNotBlank()) {
                             scope.launch {
-                                repository.createFolder(newFolderName.trim(), currentFolderId)
-                                newFolderName = ""
-                                showCreateFolderDialog = false
+                                val result = repository.createFolder(trimmed, currentFolderId)
+                                result.onSuccess {
+                                    Toast.makeText(context, "Directory '$trimmed' created", Toast.LENGTH_SHORT).show()
+                                    newFolderName = ""
+                                    showCreateFolderDialog = false
+                                    selectedCategory = "ALL"
+                                    searchQuery = ""
+                                }.onFailure { err ->
+                                    Toast.makeText(context, err.message ?: "Could not create directory", Toast.LENGTH_LONG).show()
+                                }
                             }
                         }
-                    }
+                    },
+                    modifier = Modifier.testTag("confirm_create_folder_button")
                 ) {
                     Text("Create")
                 }

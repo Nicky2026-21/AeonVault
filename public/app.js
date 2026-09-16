@@ -80,6 +80,8 @@ let currentTab = "overview";
 let activeCategory = "ALL";
 let activeUploads = [];
 let selectedFileForShare = null;
+let currentFolderId = null;
+let folderBreadcrumbs = [{ id: null, name: "Vault Root" }];
 
 function loadVault() {
   const saved = localStorage.getItem(VAULT_KEY);
@@ -111,7 +113,10 @@ function switchTab(tabId) {
   document.querySelectorAll(".view-panel").forEach(panel => {
     panel.classList.toggle("active", panel.id === `view-${tabId}`);
   });
-  if (tabId === "files") renderVaultFiles();
+  if (tabId === "files") {
+    renderVaultBreadcrumbs();
+    renderVaultFiles();
+  }
   if (tabId === "shared") renderSharedLinks();
   if (tabId === "activity") renderAuditLedger();
 }
@@ -120,19 +125,128 @@ document.querySelectorAll(".nav-item").forEach(btn => {
   btn.addEventListener("click", () => switchTab(btn.getAttribute("data-tab")));
 });
 
+// Directory Management
+function openNewFolderModal() {
+  const input = document.getElementById("newFolderNameInput");
+  if (input) input.value = "";
+  openModal("newFolderModal");
+  if (input) setTimeout(() => input.focus(), 120);
+}
+
+function confirmCreateNewFolder() {
+  const input = document.getElementById("newFolderNameInput");
+  const name = input ? input.value.trim() : "";
+  if (!name) {
+    alert("Please enter a valid directory name.");
+    return;
+  }
+
+  const currentUserId = vault.user ? vault.user.id : "acc_1";
+  const existing = vault.files.find(f => 
+    (f.userId === currentUserId || !f.userId) &&
+    (f.parentId === currentFolderId || (!f.parentId && !currentFolderId)) &&
+    f.name.toLowerCase() === name.toLowerCase()
+  );
+  if (existing) {
+    alert(`An item or directory named "${name}" already exists in this folder.`);
+    return;
+  }
+
+  const newFolder = {
+    id: "dir_" + Date.now(),
+    userId: currentUserId,
+    name: name,
+    isFolder: true,
+    category: "FOLDER",
+    parentId: currentFolderId,
+    size: 0,
+    formattedSize: "--",
+    updatedAt: "Just now",
+    isFavorite: false,
+    encryption: "AES-256-GCM",
+    hash: "DIR_TREE_NODE",
+    summary: `Virtual directory container for "${name}" mapped to 1 QB logical matrix.`
+  };
+
+  vault.files.unshift(newFolder);
+  vault.activities.unshift({
+    id: "act_" + Date.now(),
+    action: "CREATE_FOLDER",
+    desc: `Created directory "${name}" in ${currentFolderId ? 'nested folder' : 'Vault Root'}`,
+    time: "Just now"
+  });
+
+  saveVault();
+  closeModal("newFolderModal");
+  activeCategory = "ALL";
+  document.querySelectorAll(".filter-chips .chip").forEach(c => {
+    c.classList.toggle("active", c.getAttribute("data-cat") === "ALL");
+  });
+  renderVaultBreadcrumbs();
+  renderVaultFiles();
+  renderRecentFiles();
+}
+
+function navigateToFolder(folderId, folderName) {
+  currentFolderId = folderId;
+  if (!folderId) {
+    folderBreadcrumbs = [{ id: null, name: "Vault Root" }];
+  } else {
+    const idx = folderBreadcrumbs.findIndex(b => b.id === folderId);
+    if (idx !== -1) {
+      folderBreadcrumbs = folderBreadcrumbs.slice(0, idx + 1);
+    } else {
+      folderBreadcrumbs.push({ id: folderId, name: folderName || "Directory" });
+    }
+  }
+  renderVaultBreadcrumbs();
+  renderVaultFiles();
+}
+
+function renderVaultBreadcrumbs() {
+  const container = document.getElementById("vaultBreadcrumbs");
+  if (!container) return;
+  container.innerHTML = folderBreadcrumbs.map((crumb, idx) => {
+    const isLast = idx === folderBreadcrumbs.length - 1;
+    return `
+      <span class="crumb ${isLast ? 'active' : ''}" style="cursor: pointer;" onclick="navigateToFolder(${crumb.id ? `'${crumb.id}'` : 'null'}, '${escapeHtml(crumb.name)}')">
+        ${escapeHtml(crumb.name)}
+      </span>
+      ${!isLast ? '<span style="color: var(--text-muted); margin: 0 4px;">/</span>' : ''}
+    `;
+  }).join("");
+}
+
 // Render Recent Files Table
 function renderRecentFiles() {
   const tbody = document.getElementById("recentFilesBody");
   if (!tbody) return;
-  tbody.innerHTML = vault.files.map(f => `
+  const currentUserId = vault.user ? vault.user.id : "acc_1";
+  const userFiles = vault.files.filter(f => !f.userId || f.userId === currentUserId);
+  tbody.innerHTML = userFiles.slice(0, 8).map(f => `
     <tr>
-      <td><strong>${f.name}</strong></td>
-      <td><span class="badge badge-cyan">${f.category}</span></td>
-      <td>${f.formattedSize}</td>
+      <td>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span>${f.isFolder ? '📁' : '📄'}</span>
+          ${f.isFolder ? `
+            <strong style="cursor: pointer; color: var(--neon-cyan);" onclick="switchTab('files'); navigateToFolder('${f.id}', '${escapeHtml(f.name)}')">
+              ${escapeHtml(f.name)}
+            </strong>
+          ` : `
+            <strong>${escapeHtml(f.name)}</strong>
+          `}
+        </div>
+      </td>
+      <td><span class="badge ${f.isFolder ? 'badge-violet' : 'badge-cyan'}">${f.isFolder ? 'DIRECTORY' : f.category}</span></td>
+      <td>${f.isFolder ? '--' : f.formattedSize}</td>
       <td><code>${f.encryption}</code></td>
       <td>
-        <button class="btn btn-outline btn-sm" onclick="openFilePreview('${f.id}')">Inspect</button>
-        <button class="btn btn-outline btn-sm" onclick="openShareModal('${f.id}')">Share</button>
+        ${f.isFolder ? `
+          <button class="btn btn-outline btn-sm" onclick="switchTab('files'); navigateToFolder('${f.id}', '${escapeHtml(f.name)}')">Open</button>
+        ` : `
+          <button class="btn btn-outline btn-sm" onclick="openFilePreview('${f.id}')">Inspect</button>
+          <button class="btn btn-outline btn-sm" onclick="openShareModal('${f.id}')">Share</button>
+        `}
       </td>
     </tr>
   `).join("");
@@ -143,14 +257,31 @@ function renderVaultFiles() {
   const container = document.getElementById("vaultFilesContainer");
   if (!container) return;
 
-  const filtered = vault.files.filter(f => {
+  const currentUserId = vault.user ? vault.user.id : "acc_1";
+  const userFiles = vault.files.filter(f => !f.userId || f.userId === currentUserId);
+
+  const filtered = userFiles.filter(f => {
+    // Parent folder filtering
+    const matchesFolder = (currentFolderId === null) 
+      ? (!f.parentId || f.parentId === "" || f.parentId === null)
+      : (f.parentId === currentFolderId);
+
+    if (!matchesFolder) return false;
+
     if (activeCategory === "ALL") return true;
     if (activeCategory === "FAVORITES") return f.isFavorite;
     return f.category === activeCategory;
   });
 
   if (filtered.length === 0) {
-    container.innerHTML = `<div style="padding:48px; text-align:center; color:var(--text-muted);">No items in this category.</div>`;
+    container.innerHTML = `
+      <div style="padding:48px; text-align:center; color:var(--text-muted);">
+        <div style="font-size: 28px; margin-bottom: 8px;">📂</div>
+        <div>No items in this directory.</div>
+        <div style="margin-top: 12px;">
+          <button class="btn btn-outline btn-sm" onclick="openNewFolderModal()">+ Create Directory</button>
+        </div>
+      </div>`;
     return;
   }
 
@@ -159,7 +290,7 @@ function renderVaultFiles() {
       <thead>
         <tr>
           <th>Name</th>
-          <th>Category</th>
+          <th>Type</th>
           <th>Size</th>
           <th>Last Modified</th>
           <th>Integrity</th>
@@ -168,16 +299,32 @@ function renderVaultFiles() {
       </thead>
       <tbody>
         ${filtered.map(f => `
-          <tr>
-            <td><strong>${f.name}</strong></td>
-            <td><span class="badge badge-cyan">${f.category}</span></td>
-            <td>${f.formattedSize}</td>
+          <tr style="${f.isFolder ? 'background: rgba(0, 245, 255, 0.03);' : ''}">
+            <td>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span>${f.isFolder ? '📁' : '📄'}</span>
+                ${f.isFolder ? `
+                  <strong style="cursor: pointer; color: var(--neon-cyan);" onclick="navigateToFolder('${f.id}', '${escapeHtml(f.name)}')">
+                    ${escapeHtml(f.name)}
+                  </strong>
+                ` : `
+                  <strong>${escapeHtml(f.name)}</strong>
+                `}
+              </div>
+            </td>
+            <td><span class="badge ${f.isFolder ? 'badge-violet' : 'badge-cyan'}">${f.isFolder ? 'DIRECTORY' : f.category}</span></td>
+            <td>${f.isFolder ? '--' : f.formattedSize}</td>
             <td>${f.updatedAt}</td>
             <td><span class="badge badge-emerald">SHA-256 OK</span></td>
             <td>
-              <button class="btn btn-outline btn-sm" onclick="openFilePreview('${f.id}')">Inspect</button>
-              <button class="btn btn-outline btn-sm" onclick="openShareModal('${f.id}')">Share</button>
-              <button class="btn btn-outline btn-sm" style="color:var(--coral)" onclick="deleteFile('${f.id}')">Delete</button>
+              ${f.isFolder ? `
+                <button class="btn btn-outline btn-sm" onclick="navigateToFolder('${f.id}', '${escapeHtml(f.name)}')">Open</button>
+                <button class="btn btn-outline btn-sm" style="color:var(--coral);" onclick="deleteFile('${f.id}')">Delete</button>
+              ` : `
+                <button class="btn btn-outline btn-sm" onclick="openFilePreview('${f.id}')">Inspect</button>
+                <button class="btn btn-outline btn-sm" onclick="openShareModal('${f.id}')">Share</button>
+                <button class="btn btn-outline btn-sm" style="color:var(--coral);" onclick="deleteFile('${f.id}')">Delete</button>
+              `}
             </td>
           </tr>
         `).join("")}
@@ -637,15 +784,89 @@ function submitAddNewAccount() {
   alert(`Account '${username}' created and activated!`);
 }
 
+// Background Synchronization Service
+class VaultSyncService {
+  constructor() {
+    this.syncIntervalMs = 20000; // Keep all linked accounts synchronized periodically
+    this.isSyncing = false;
+    this.lastSyncTime = Date.now();
+    this.meshNodesOnline = 12;
+  }
+
+  start() {
+    this.syncAllAccounts();
+    setInterval(() => this.syncAllAccounts(), this.syncIntervalMs);
+  }
+
+  syncAllAccounts() {
+    this.isSyncing = true;
+    this.updateSyncUI();
+
+    try {
+      ensureAccountsList();
+
+      // Synchronize storage metrics and integrity across all linked accounts
+      vault.accounts.forEach(acc => {
+        const accFiles = vault.files.filter(f => f.userId === acc.id || (!f.userId && acc.id === vault.accounts[0].id));
+        const totalBytes = accFiles.reduce((sum, f) => sum + (f.size || 0), 0);
+        acc.quotaUsedBytes = totalBytes;
+        acc.lastSyncedAt = Date.now();
+        acc.syncStatus = "Mesh Synced (12 Nodes)";
+      });
+
+      // Update active user quota if matching
+      if (vault.user && vault.user.id) {
+        const currentAcc = vault.accounts.find(a => a.id === vault.user.id);
+        if (currentAcc) {
+          vault.user.quotaUsedBytes = currentAcc.quotaUsedBytes;
+        }
+      }
+
+      this.lastSyncTime = Date.now();
+      saveVault();
+    } catch (e) {
+      console.error("Background sync error:", e);
+    } finally {
+      this.isSyncing = false;
+      this.updateSyncUI();
+    }
+  }
+
+  updateSyncUI() {
+    const syncStatusEl = document.getElementById("meshSyncStatus");
+    if (syncStatusEl) {
+      if (this.isSyncing) {
+        syncStatusEl.innerHTML = `● Syncing mesh...`;
+        syncStatusEl.style.color = "var(--electric-violet)";
+      } else {
+        syncStatusEl.innerHTML = `● Mesh Synced (${this.meshNodesOnline} Nodes)`;
+        syncStatusEl.style.color = "var(--emerald-glow)";
+      }
+    }
+  }
+}
+
+const backgroundSyncService = new VaultSyncService();
+
 function switchAccount(accountId) {
   ensureAccountsList();
   const target = vault.accounts.find(a => a.id === accountId);
   if (target) {
     vault.user = target;
+    // Reset directory to root on profile switch
+    currentFolderId = null;
+    folderBreadcrumbs = [{ id: null, name: "Vault Root" }];
+
+    // Perform instantaneous background sync cycle across accounts
+    backgroundSyncService.syncAllAccounts();
+
     saveVault();
     renderAccountsUI();
     updateQuotaDisplay();
-    alert(`Switched to account '${target.username}'`);
+    renderVaultBreadcrumbs();
+    renderVaultFiles();
+    renderRecentFiles();
+    renderAuditLedger();
   }
 }
 
@@ -659,12 +880,20 @@ function removeAccount(accountId) {
   if (vault.user.id === accountId) {
     vault.user = vault.accounts[0] || defaultState.user;
   }
+  backgroundSyncService.syncAllAccounts();
   saveVault();
   renderAccountsUI();
   updateQuotaDisplay();
+  renderVaultBreadcrumbs();
+  renderVaultFiles();
+  renderRecentFiles();
+  renderAuditLedger();
 }
 
 // Initialize
+backgroundSyncService.start();
 renderRecentFiles();
 updateQuotaDisplay();
 renderAccountsUI();
+renderVaultBreadcrumbs();
+renderVaultFiles();

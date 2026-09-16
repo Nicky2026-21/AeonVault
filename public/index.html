@@ -38,7 +38,7 @@
     </div>
 
     <div class="header-right">
-      <span class="badge badge-mesh">● Mesh Online</span>
+      <span class="badge badge-mesh" id="meshSyncStatus" style="cursor: pointer;" title="Click to synchronize all accounts across 12 mesh nodes" onclick="backgroundSyncService.syncAllAccounts()">● Mesh Synced (12 Nodes)</span>
       <span class="badge badge-quota">1 QB Logical Quota</span>
       <button class="btn btn-outline" id="themeToggleBtn" title="Toggle Theme">
         <span id="themeIcon">☀️</span>
@@ -425,6 +425,27 @@
       </div>
       <div class="modal-footer">
         <button class="btn btn-outline" onclick="closeModal('accountsModal')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 5: Create New Directory -->
+  <div class="modal-overlay" id="newFolderModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Create New Directory</h3>
+        <button class="btn-close" onclick="closeModal('newFolderModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <label>Directory Name:</label>
+        <input type="text" id="newFolderNameInput" class="input-field" placeholder="e.g., Quantum Manifests" style="width: 100%;" />
+        <div class="callout callout-cyan" style="margin-top: 12px; font-size: 12px;">
+          Directories in ÆonVault are zero-knowledge virtual hierarchy containers mapped directly to your 1 QB addressing matrix.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('newFolderModal')">Cancel</button>
+        <button class="btn btn-primary" onclick="confirmCreateNewFolder()">Create Directory</button>
       </div>
     </div>
   </div>

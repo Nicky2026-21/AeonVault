@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.ManageAccounts
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.SwapHoriz
@@ -94,6 +95,7 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     val currentUser by repository.currentUser.collectAsState()
     val allUsers by repository.allUsers.collectAsState(initial = emptyList())
+    val syncState by repository.syncState.collectAsState()
 
     var configuredWebUrl by remember { mutableStateOf("https://aeonvaultfilemanager.vercel.app") }
     var isEditingWebUrl by remember { mutableStateOf(false) }
@@ -376,6 +378,54 @@ fun SettingsScreen(
                                     }
                                 }
                             }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Background Multi-Account Sync Status
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(if (syncState.isSyncing) ElectricViolet else EmeraldGlow)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (syncState.isSyncing) "Background Sync Active..." else "Continuous Mesh Sync Active",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (syncState.isSyncing) ElectricViolet else EmeraldGlow
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "All ${allUsers.size} accounts synced across 12 distributed nodes · Seamless switching",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                repository.syncManager.triggerImmediateSync()
+                                Toast.makeText(context, "Synchronizing all ${allUsers.size} accounts", Toast.LENGTH_SHORT).show()
+                            },
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.testTag("sync_all_accounts_now_button")
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp), tint = NeonCyan)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Sync Now", fontSize = 11.sp, color = NeonCyan)
                         }
                     }
                 }

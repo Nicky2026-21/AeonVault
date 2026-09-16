@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -101,6 +102,7 @@ fun DashboardScreen(
     val allActiveItems by repository.getAllActiveItems().collectAsState(initial = emptyList())
     val recentItems by repository.getRecentItems(5).collectAsState(initial = emptyList())
     val uploadTasks by repository.getUploadTasks().collectAsState(initial = emptyList())
+    val syncState by repository.syncState.collectAsState()
     val activeUploads = uploadTasks.filter { it.status == UploadStatus.UPLOADING || it.status == UploadStatus.QUEUED }
 
     val fileCount = allActiveItems.count { !it.isFolder }
@@ -204,7 +206,40 @@ fun DashboardScreen(
                         )
                     }
 
-                    GlowingIndicator(text = "Online")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    if (syncState.isSyncing) ElectricViolet.copy(alpha = 0.18f)
+                                    else EmeraldGlow.copy(alpha = 0.12f)
+                                )
+                                .clickable {
+                                    repository.syncManager.triggerImmediateSync()
+                                    Toast.makeText(context, "Synchronizing all linked accounts with 12 mesh nodes", Toast.LENGTH_SHORT).show()
+                                }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(if (syncState.isSyncing) ElectricViolet else EmeraldGlow)
+                                )
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text(
+                                    text = if (syncState.isSyncing) "Syncing..." else "Mesh Synced",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 10.sp,
+                                    color = if (syncState.isSyncing) ElectricViolet else EmeraldGlow,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        GlowingIndicator(text = "Online")
+                    }
                 }
             }
         }

@@ -10,30 +10,44 @@ import com.example.data.model.UploadTask
 import com.example.data.model.User
 import com.example.data.model.VaultItem
 import com.example.engine.upload.ResumableUploadEngine
+import com.example.engine.sync.VaultSyncManager
+import com.example.engine.sync.SyncState
 import com.example.network.gemini.GeminiService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class VaultRepository(private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val db = AppDatabase.getDatabase(context)
     val dao: VaultDao = db.vaultDao()
     val geminiService = GeminiService()
     val uploadEngine = ResumableUploadEngine(context, dao, geminiService)
+    val syncManager = VaultSyncManager(context, dao)
+    val syncState: StateFlow<SyncState> = syncManager.syncState
 
     private val _currentUser = MutableStateFlow<User?>(null)
     val currentUser: StateFlow<User?> = _currentUser.asStateFlow()
     val allUsers: Flow<List<User>> = dao.getAllUsers()
 
     init {
+        syncManager.setOnAccountUpdatedListener { updatedUser ->
+            if (_currentUser.value?.id == updatedUser.id) {
+                _currentUser.value = updatedUser
+            }
+        }
+        syncManager.startBackgroundSync()
+
         scope.launch {
             // Check for existing user or initialize default primary vault account
             var user = dao.getFirstUser()
@@ -294,12 +308,18 @@ class VaultRepository(private val context: Context) {
 
     fun switchAccount(user: User) {
         _currentUser.value = user
+        scope.launch {
+            refreshQuota(user.id)
+            syncManager.triggerImmediateSync()
+        }
     }
 
     suspend fun switchAccountById(userId: String) = withContext(Dispatchers.IO) {
         val user = dao.getUserByIdSync(userId)
         if (user != null) {
             _currentUser.value = user
+            refreshQuota(user.id)
+            syncManager.triggerImmediateSync()
         }
     }
 
@@ -334,6 +354,7 @@ class VaultRepository(private val context: Context) {
         dao.insertUser(newUser)
         seedDefaultVaultData(newUser.id)
         _currentUser.value = newUser
+        syncManager.triggerImmediateSync()
 
         dao.insertLog(
             ActivityLog(
@@ -353,66 +374,97 @@ class VaultRepository(private val context: Context) {
             val remaining = dao.getFirstUser()
             _currentUser.value = remaining
         }
+        syncManager.triggerImmediateSync()
         Result.success(Unit)
     }
 
-    // --- File & Folder Operations ---
+    // --- Reactive File & Folder Operations ---
     fun getItemsInFolder(parentId: String?): Flow<List<VaultItem>> {
-        val userId = _currentUser.value?.id ?: ""
-        return dao.getItemsInFolder(userId, parentId)
+        return _currentUser.flatMapLatest { user ->
+            val userId = user?.id ?: ""
+            dao.getItemsInFolder(userId, parentId)
+        }
     }
 
     fun getAllActiveItems(): Flow<List<VaultItem>> {
-        val userId = _currentUser.value?.id ?: ""
-        return dao.getAllActiveItems(userId)
+        return _currentUser.flatMapLatest { user ->
+            val userId = user?.id ?: ""
+            dao.getAllActiveItems(userId)
+        }
     }
 
     fun getFavorites(): Flow<List<VaultItem>> {
-        val userId = _currentUser.value?.id ?: ""
-        return dao.getFavorites(userId)
+        return _currentUser.flatMapLatest { user ->
+            val userId = user?.id ?: ""
+            dao.getFavorites(userId)
+        }
     }
 
     fun getSharedItems(): Flow<List<VaultItem>> {
-        val userId = _currentUser.value?.id ?: ""
-        return dao.getSharedItems(userId)
+        return _currentUser.flatMapLatest { user ->
+            val userId = user?.id ?: ""
+            dao.getSharedItems(userId)
+        }
     }
 
     fun getTrashItems(): Flow<List<VaultItem>> {
-        val userId = _currentUser.value?.id ?: ""
-        return dao.getTrashItems(userId)
+        return _currentUser.flatMapLatest { user ->
+            val userId = user?.id ?: ""
+            dao.getTrashItems(userId)
+        }
     }
 
     fun getRecentItems(limit: Int = 10): Flow<List<VaultItem>> {
-        val userId = _currentUser.value?.id ?: ""
-        return dao.getRecentItems(userId, limit)
+        return _currentUser.flatMapLatest { user ->
+            val userId = user?.id ?: ""
+            dao.getRecentItems(userId, limit)
+        }
     }
 
     fun searchItems(query: String): Flow<List<VaultItem>> {
-        val userId = _currentUser.value?.id ?: ""
-        return dao.searchItems(userId, query)
+        return _currentUser.flatMapLatest { user ->
+            val userId = user?.id ?: ""
+            dao.searchItems(userId, query)
+        }
     }
 
-    suspend fun createFolder(name: String, parentId: String?) = withContext(Dispatchers.IO) {
-        val userId = _currentUser.value?.id ?: return@withContext
+    suspend fun createFolder(name: String, parentId: String?): Result<VaultItem> = withContext(Dispatchers.IO) {
+        val user = _currentUser.value ?: return@withContext Result.failure(IllegalStateException("No active account"))
+        val trimmedName = name.trim()
+        if (trimmedName.isBlank()) {
+            return@withContext Result.failure(IllegalArgumentException("Directory name cannot be empty"))
+        }
+
+        // Check if directory with same name already exists in this folder
+        val existing = dao.findItemByNameInFolder(user.id, trimmedName, parentId)
+        if (existing != null) {
+            return@withContext Result.failure(IllegalArgumentException("An item or directory named '$trimmedName' already exists in this location"))
+        }
+
         val folder = VaultItem(
-            id = UUID.randomUUID().toString(),
-            userId = userId,
-            name = name,
+            id = "dir-" + UUID.randomUUID().toString().take(12),
+            userId = user.id,
+            name = trimmedName,
             parentId = parentId,
             isFolder = true,
+            mimeType = "inode/directory",
+            sizeBytes = 0L,
+            extension = "",
             aiCategory = "FOLDER",
-            aiTags = "folder, directory, vault"
+            aiTags = "folder, directory, vault",
+            aiSummary = "Directory container for vault items."
         )
         dao.insertItem(folder)
         dao.insertLog(
             ActivityLog(
                 id = UUID.randomUUID().toString(),
-                userId = userId,
+                userId = user.id,
                 actionType = "CREATE_FOLDER",
-                description = "Created directory '$name'",
-                targetItemName = name
+                description = "Created directory '$trimmedName'",
+                targetItemName = trimmedName
             )
         )
+        Result.success(folder)
     }
 
     suspend fun renameItem(item: VaultItem, newName: String) = withContext(Dispatchers.IO) {
@@ -525,19 +577,21 @@ class VaultRepository(private val context: Context) {
         )
     }
 
-    private suspend fun refreshQuota(userId: String) {
+    suspend fun refreshQuota(userId: String) {
         val used = dao.calculateUsedBytes(userId)
         dao.updateUserQuota(userId, used)
         val user = dao.getUserByIdSync(userId)
-        if (user != null) {
+        if (user != null && _currentUser.value?.id == userId) {
             _currentUser.value = user
         }
     }
 
     // --- Uploads ---
     fun getUploadTasks(): Flow<List<UploadTask>> {
-        val userId = _currentUser.value?.id ?: ""
-        return dao.getAllTasks(userId)
+        return _currentUser.flatMapLatest { user ->
+            val userId = user?.id ?: ""
+            dao.getAllTasks(userId)
+        }
     }
 
     fun enqueueUpload(uri: Uri, name: String, mime: String, size: Long, parentId: String?): String {
@@ -551,8 +605,10 @@ class VaultRepository(private val context: Context) {
 
     // --- Sharing ---
     fun getShareLinks(): Flow<List<ShareLink>> {
-        val userId = _currentUser.value?.id ?: ""
-        return dao.getShareLinksForUser(userId)
+        return _currentUser.flatMapLatest { user ->
+            val userId = user?.id ?: ""
+            dao.getShareLinksForUser(userId)
+        }
     }
 
     suspend fun createShareLink(
@@ -607,7 +663,9 @@ class VaultRepository(private val context: Context) {
 
     // --- Activity Logs ---
     fun getActivityLogs(): Flow<List<ActivityLog>> {
-        val userId = _currentUser.value?.id ?: ""
-        return dao.getLogsForUser(userId)
+        return _currentUser.flatMapLatest { user ->
+            val userId = user?.id ?: ""
+            dao.getLogsForUser(userId)
+        }
     }
 }

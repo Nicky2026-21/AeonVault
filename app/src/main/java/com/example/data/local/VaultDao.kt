@@ -35,6 +35,9 @@ interface VaultDao {
     @Query("SELECT * FROM users ORDER BY createdAt ASC")
     fun getAllUsers(): Flow<List<User>>
 
+    @Query("SELECT * FROM users ORDER BY createdAt ASC")
+    suspend fun getAllUsersSync(): List<User>
+
     @Query("DELETE FROM users WHERE id = :userId")
     suspend fun deleteUser(userId: String)
 
@@ -42,8 +45,11 @@ interface VaultDao {
     suspend fun updateUserQuota(userId: String, usedBytes: Long)
 
     // --- Vault Items ---
-    @Query("SELECT * FROM vault_items WHERE userId = :userId AND isTrash = 0 AND ((:parentId IS NULL AND parentId IS NULL) OR parentId = :parentId) ORDER BY isFolder DESC, name ASC")
+    @Query("SELECT * FROM vault_items WHERE userId = :userId AND isTrash = 0 AND ((:parentId IS NULL AND (parentId IS NULL OR parentId = '')) OR parentId = :parentId) ORDER BY isFolder DESC, name ASC")
     fun getItemsInFolder(userId: String, parentId: String?): Flow<List<VaultItem>>
+
+    @Query("SELECT * FROM vault_items WHERE userId = :userId AND name = :name AND ((:parentId IS NULL AND (parentId IS NULL OR parentId = '')) OR parentId = :parentId) AND isTrash = 0 LIMIT 1")
+    suspend fun findItemByNameInFolder(userId: String, name: String, parentId: String?): VaultItem?
 
     @Query("SELECT * FROM vault_items WHERE userId = :userId AND isTrash = 0 ORDER BY modifiedAt DESC")
     fun getAllActiveItems(userId: String): Flow<List<VaultItem>>
