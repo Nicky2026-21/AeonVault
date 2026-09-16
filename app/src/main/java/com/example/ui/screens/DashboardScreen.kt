@@ -82,6 +82,7 @@ import com.example.ui.components.QuotaDisclaimerCard
 import com.example.ui.theme.ElectricViolet
 import com.example.ui.theme.EmeraldGlow
 import com.example.ui.theme.NeonCyan
+import com.example.ui.theme.CoralNeon
 import com.example.ui.theme.QuantumIndigo
 import kotlinx.coroutines.launch
 

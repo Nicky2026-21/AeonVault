@@ -87,9 +87,14 @@ class MainActivity : ComponentActivity() {
         setContent {
             var isDarkTheme by remember { mutableStateOf(true) }
             val currentUser by repository.currentUser.collectAsState()
+            val isInitializing by repository.isInitializing.collectAsState()
 
             MyApplicationTheme(darkTheme = isDarkTheme) {
-                if (currentUser == null) {
+                if (isInitializing) {
+                    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                        androidx.compose.material3.CircularProgressIndicator(color = NeonCyan)
+                    }
+                } else if (currentUser == null) {
                     AuthScreen(
                         repository = repository,
                         onAuthSuccess = {

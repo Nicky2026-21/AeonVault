@@ -28,9 +28,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
 
+import android.content.SharedPreferences
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class VaultRepository(private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val prefs: SharedPreferences = context.getSharedPreferences("aeon_vault_prefs", Context.MODE_PRIVATE)
+    
     val db = AppDatabase.getDatabase(context)
     val dao: VaultDao = db.vaultDao()
     val geminiService = GeminiService()
@@ -42,6 +46,9 @@ class VaultRepository(private val context: Context) {
     val currentUser: StateFlow<User?> = _currentUser.asStateFlow()
     val allUsers: Flow<List<User>> = dao.getAllUsers()
 
+    private val _isInitializing = MutableStateFlow(true)
+    val isInitializing: StateFlow<Boolean> = _isInitializing.asStateFlow()
+
     init {
         syncManager.setOnAccountUpdatedListener { updatedUser ->
             if (_currentUser.value?.id == updatedUser.id) {
@@ -51,8 +58,9 @@ class VaultRepository(private val context: Context) {
         syncManager.startBackgroundSync()
 
         scope.launch {
-            // Check for existing user or initialize default primary vault account
-            var user = dao.getFirstUser()
+            val lastUserId = prefs.getString("last_active_user_id", null)
+            var user = if (lastUserId != null) dao.getUserByIdSync(lastUserId) else dao.getFirstUser()
+            
             if (user == null) {
                 val defaultSalt = UUID.randomUUID().toString().take(8)
                 val defaultUser = User(
@@ -71,7 +79,13 @@ class VaultRepository(private val context: Context) {
                 seedDefaultVaultData(defaultUser.id)
             }
             _currentUser.value = user
+            saveLastActiveUser(user?.id)
+            _isInitializing.value = false
         }
+    }
+
+    private fun saveLastActiveUser(userId: String?) {
+        prefs.edit().putString("last_active_user_id", userId).apply()
     }
 
     private suspend fun seedDefaultVaultData(userId: String) {
@@ -246,6 +260,7 @@ class VaultRepository(private val context: Context) {
         )
         dao.insertUser(newUser)
         _currentUser.value = newUser
+        saveLastActiveUser(newUser.id)
         seedDefaultVaultData(newUser.id)
 
         dao.insertLog(
@@ -268,6 +283,7 @@ class VaultRepository(private val context: Context) {
             return@withContext Result.failure(IllegalArgumentException("Invalid credentials. Please verify your password."))
         }
         _currentUser.value = user
+        saveLastActiveUser(user.id)
         dao.insertLog(
             ActivityLog(
                 id = UUID.randomUUID().toString(),
@@ -291,6 +307,7 @@ class VaultRepository(private val context: Context) {
         val updatedUser = user.copy(passwordHash = newHash, salt = newSalt)
         dao.insertUser(updatedUser)
         _currentUser.value = updatedUser
+        saveLastActiveUser(updatedUser.id)
 
         dao.insertLog(
             ActivityLog(
@@ -306,10 +323,12 @@ class VaultRepository(private val context: Context) {
 
     fun logout() {
         _currentUser.value = null
+        saveLastActiveUser(null)
     }
 
     fun switchAccount(user: User) {
         _currentUser.value = user
+        saveLastActiveUser(user.id)
         scope.launch {
             refreshQuota(user.id)
             syncManager.triggerImmediateSync()
@@ -320,6 +339,7 @@ class VaultRepository(private val context: Context) {
         val user = dao.getUserByIdSync(userId)
         if (user != null) {
             _currentUser.value = user
+            saveLastActiveUser(user.id)
             refreshQuota(user.id)
             syncManager.triggerImmediateSync()
         }
@@ -356,6 +376,7 @@ class VaultRepository(private val context: Context) {
         dao.insertUser(newUser)
         seedDefaultVaultData(newUser.id)
         _currentUser.value = newUser
+        saveLastActiveUser(newUser.id)
         syncManager.triggerImmediateSync()
 
         dao.insertLog(
@@ -375,6 +396,7 @@ class VaultRepository(private val context: Context) {
         if (_currentUser.value?.id == userId) {
             val remaining = dao.getFirstUser()
             _currentUser.value = remaining
+            saveLastActiveUser(remaining?.id)
         }
         syncManager.triggerImmediateSync()
         Result.success(Unit)
@@ -681,6 +703,95 @@ class VaultRepository(private val context: Context) {
                 targetItemName = item.name
             )
         )
+    }
+
+    suspend fun batchPermanentlyDelete(items: List<VaultItem>) = withContext(Dispatchers.IO) {
+        if (items.isEmpty()) return@withContext
+        val userId = items.first().userId
+        dao.deleteItems(items)
+        refreshQuota(userId)
+        dao.insertLog(
+            ActivityLog(
+                id = UUID.randomUUID().toString(),
+                userId = userId,
+                actionType = "BATCH_DELETE",
+                description = "Permanently purged ${items.size} items",
+                targetItemName = "Batch Action"
+            )
+        )
+    }
+
+    suspend fun batchMoveToTrash(items: List<VaultItem>) = withContext(Dispatchers.IO) {
+        if (items.isEmpty()) return@withContext
+        val userId = items.first().userId
+        val updatedItems = items.map {
+            it.copy(
+                isTrash = true,
+                trashedAt = System.currentTimeMillis(),
+                modifiedAt = System.currentTimeMillis()
+            )
+        }
+        dao.updateItems(updatedItems)
+        refreshQuota(userId)
+        dao.insertLog(
+            ActivityLog(
+                id = UUID.randomUUID().toString(),
+                userId = userId,
+                actionType = "BATCH_TRASH",
+                description = "Moved ${items.size} items to Trash",
+                targetItemName = "Batch Action"
+            )
+        )
+    }
+
+    suspend fun batchRestoreFromTrash(items: List<VaultItem>) = withContext(Dispatchers.IO) {
+        if (items.isEmpty()) return@withContext
+        val userId = items.first().userId
+        val updatedItems = items.map {
+            it.copy(
+                isTrash = false,
+                trashedAt = null,
+                modifiedAt = System.currentTimeMillis()
+            )
+        }
+        dao.updateItems(updatedItems)
+        refreshQuota(userId)
+        dao.insertLog(
+            ActivityLog(
+                id = UUID.randomUUID().toString(),
+                userId = userId,
+                actionType = "BATCH_RESTORE",
+                description = "Restored ${items.size} items from Trash",
+                targetItemName = "Batch Action"
+            )
+        )
+    }
+
+    suspend fun batchDownload(items: List<VaultItem>): Result<java.io.File> = withContext(Dispatchers.IO) {
+        var user = _currentUser.value
+        if (user == null) {
+            user = dao.getFirstUser()
+            if (user != null) {
+                _currentUser.value = user
+            }
+        }
+        if (user == null) {
+            return@withContext Result.failure(IllegalStateException("No active account"))
+        }
+
+        val result = com.example.engine.zip.FolderZipExporter.exportItemsAsZip(context, dao, user.id, items)
+        result.onSuccess { zipFile ->
+            dao.insertLog(
+                ActivityLog(
+                    id = UUID.randomUUID().toString(),
+                    userId = user.id,
+                    actionType = "BATCH_DOWNLOAD",
+                    description = "Batch downloaded ${items.size} items as ZIP archive (${User.formatStorageSize(zipFile.length())})",
+                    targetItemName = zipFile.name
+                )
+            )
+        }
+        result
     }
 
     suspend fun emptyTrash() = withContext(Dispatchers.IO) {

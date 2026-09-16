@@ -83,7 +83,9 @@ fun getCategoryIconAndColor(item: VaultItem): Pair<ImageVector, Color> {
 fun FileItemCard(
     item: VaultItem,
     isGrid: Boolean = false,
+    selected: Boolean = false,
     onClick: () -> Unit,
+    onLongClick: () -> Unit = {},
     onFavoriteToggle: () -> Unit,
     onShare: () -> Unit,
     onRename: () -> Unit,
@@ -96,16 +98,28 @@ fun FileItemCard(
     var menuExpanded by remember { mutableStateOf(false) }
     val (icon, color) = getCategoryIconAndColor(item)
 
+    val backgroundColor = if (selected) {
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
+    }
+
+    val borderColor = if (selected) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        color.copy(alpha = 0.25f)
+    }
+
     if (isGrid) {
         // Grid View Card
         Box(
             modifier = modifier
                 .clip(RoundedCornerShape(14.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f))
-                .border(1.dp, color.copy(alpha = 0.25f), RoundedCornerShape(14.dp))
+                .background(backgroundColor)
+                .border(if (selected) 2.dp else 1.dp, borderColor, RoundedCornerShape(14.dp))
                 .combinedClickable(
                     onClick = onClick,
-                    onLongClick = { menuExpanded = true }
+                    onLongClick = onLongClick
                 )
                 .padding(12.dp)
                 .testTag("file_grid_item_${item.id}")
@@ -206,11 +220,11 @@ fun FileItemCard(
             modifier = modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f))
-                .border(1.dp, color.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                .background(backgroundColor)
+                .border(if (selected) 2.dp else 1.dp, borderColor, RoundedCornerShape(12.dp))
                 .combinedClickable(
                     onClick = onClick,
-                    onLongClick = { menuExpanded = true }
+                    onLongClick = onLongClick
                 )
                 .padding(horizontal = 12.dp, vertical = 10.dp)
                 .testTag("file_list_item_${item.id}")

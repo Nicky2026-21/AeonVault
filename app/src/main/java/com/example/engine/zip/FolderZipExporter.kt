@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Environment
 import androidx.core.content.FileProvider
 import com.example.data.local.VaultDao
+import com.example.data.model.User
 import com.example.data.model.VaultItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -66,6 +67,95 @@ object FolderZipExporter {
         }
     }
 
+    suspend fun exportItemsAsZip(
+        context: Context,
+        dao: VaultDao,
+        userId: String,
+        items: List<VaultItem>
+    ): Result<File> = withContext(Dispatchers.IO) {
+        try {
+            if (items.isEmpty()) {
+                return@withContext Result.failure(IllegalArgumentException("No items selected"))
+            }
+
+            val allItems = dao.getAllActiveItemsSync(userId)
+            val childrenByParent = allItems.groupBy { it.parentId }
+
+            // Target destination directory in downloads
+            val downloadsDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+                ?: File(context.filesDir, "downloads").apply { mkdirs() }
+            if (!downloadsDir.exists()) {
+                downloadsDir.mkdirs()
+            }
+
+            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            val zipFile = File(downloadsDir, "AeonVault_Batch_Export_$timestamp.zip")
+
+            ZipOutputStream(BufferedOutputStream(FileOutputStream(zipFile))).use { zos ->
+                for (item in items) {
+                    if (item.isFolder) {
+                        writeFolderRecursive(
+                            currentFolder = item,
+                            relativeBasePath = item.name,
+                            childrenByParent = childrenByParent,
+                            zos = zos
+                        )
+                    } else {
+                        writeFileToZip(item, item.name, zos)
+                    }
+                }
+            }
+
+            Result.success(zipFile)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private fun writeFileToZip(child: VaultItem, childPath: String, zos: ZipOutputStream) {
+        val fileEntry = ZipEntry(childPath).apply {
+            time = child.modifiedAt
+        }
+        zos.putNextEntry(fileEntry)
+
+        // Write file content
+        var written = false
+        if (!child.localCachedPath.isNullOrBlank()) {
+            val localFile = File(child.localCachedPath)
+            if (localFile.exists() && localFile.isFile) {
+                BufferedInputStream(FileInputStream(localFile)).use { bis ->
+                    bis.copyTo(zos)
+                }
+                written = true
+            }
+        }
+
+        if (!written && child.textContentPreview != null) {
+            zos.write(child.textContentPreview.toByteArray(Charsets.UTF_8))
+            written = true
+        }
+
+        if (!written) {
+            val manifest = buildString {
+                appendLine("ÆonVault Zero-Knowledge Object Manifest")
+                appendLine("=======================================")
+                appendLine("Object ID: ${child.id}")
+                appendLine("Object Name: ${child.name}")
+                appendLine("Logical Category: ${child.aiCategory}")
+                appendLine("Logical Size: ${User.formatStorageSize(child.sizeBytes)} (${child.sizeBytes} bytes)")
+                appendLine("MIME Type: ${child.mimeType}")
+                appendLine("SHA-256 Checksum: ${child.sha256Checksum.ifBlank { "VERIFIED_VALID_CLUSTER_NODE" }}")
+                appendLine("AI Description: ${child.aiDescription ?: "Encrypted block matrix."}")
+                appendLine("AI Summary: ${child.aiSummary ?: "Encrypted block."}")
+                appendLine("Tags: ${child.aiTags}")
+                appendLine("Modified: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(child.modifiedAt))}")
+            }
+            zos.write(manifest.toByteArray(Charsets.UTF_8))
+        }
+
+        zos.closeEntry()
+    }
+
     private fun writeFolderRecursive(
         currentFolder: VaultItem,
         relativeBasePath: String,
@@ -91,49 +181,7 @@ object FolderZipExporter {
                     zos = zos
                 )
             } else {
-                val fileEntry = ZipEntry(childPath).apply {
-                    time = child.modifiedAt
-                }
-                zos.putNextEntry(fileEntry)
-
-                // Write file content
-                var written = false
-                if (!child.localCachedPath.isNullOrBlank()) {
-                    val localFile = File(child.localCachedPath)
-                    if (localFile.exists() && localFile.isFile) {
-                        BufferedInputStream(FileInputStream(localFile)).use { bis ->
-                            bis.copyTo(zos)
-                        }
-                        written = true
-                    }
-                }
-
-                if (!written && child.textContentPreview != null) {
-                    zos.write(child.textContentPreview.toByteArray(Charsets.UTF_8))
-                    written = true
-                }
-
-                if (!written) {
-                    val manifest = buildString {
-                        appendLine("ÆonVault Zero-Knowledge Object Manifest")
-                        appendLine("=======================================")
-                        appendLine("Object ID: ${child.id}")
-                        appendLine("Object Name: ${child.name}")
-                        appendLine("Logical Category: ${child.aiCategory}")
-                        appendLine("Logical Size: ${child.formattedSize} (${child.sizeBytes} bytes)")
-                        appendLine("MIME Type: ${child.mimeType}")
-                        appendLine("SHA-256 Checksum: ${child.sha256Checksum.ifBlank { "VERIFIED_VALID_CLUSTER_NODE" }}")
-                        appendLine("Encryption Standard: ${child.encryptionStandard}")
-                        appendLine("Storage Cluster: ${child.storageCluster}")
-                        appendLine("AI Description: ${child.aiDescription ?: "Encrypted block matrix."}")
-                        appendLine("AI Summary: ${child.aiSummary ?: "Encrypted block."}")
-                        appendLine("Tags: ${child.aiTags}")
-                        appendLine("Modified: ${child.formattedDate}")
-                    }
-                    zos.write(manifest.toByteArray(Charsets.UTF_8))
-                }
-
-                zos.closeEntry()
+                writeFileToZip(child, childPath, zos)
             }
         }
     }

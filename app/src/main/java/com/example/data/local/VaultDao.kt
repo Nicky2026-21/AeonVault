@@ -87,8 +87,14 @@ interface VaultDao {
     @Update
     suspend fun updateItem(item: VaultItem)
 
+    @Update
+    suspend fun updateItems(items: List<VaultItem>)
+
     @Delete
     suspend fun deleteItem(item: VaultItem)
+
+    @Delete
+    suspend fun deleteItems(items: List<VaultItem>)
 
     @Query("DELETE FROM vault_items WHERE id = :id")
     suspend fun deleteItemById(id: String)

@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Search
@@ -96,6 +97,9 @@ fun VaultScreen(
     var searchQuery by remember { mutableStateOf("") }
     var sortMode by remember { mutableStateOf("DATE_DESC") } // DATE_DESC, DATE_ASC, NAME_ASC, SIZE_DESC
     var sortMenuOpen by remember { mutableStateOf(false) }
+
+    var selectedItemIds by remember { mutableStateOf(setOf<String>()) }
+    val isSelectionMode = selectedItemIds.isNotEmpty()
 
     // Dialog States
     var showCreateFolderDialog by remember { mutableStateOf(false) }
@@ -180,6 +184,68 @@ fun VaultScreen(
 
         // MANDATORY: Storage Quota Disclaimer on My Vault
         QuotaDisclaimerCard(modifier = Modifier.padding(bottom = 8.dp))
+
+        if (isSelectionMode) {
+            // Selection Bar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { selectedItemIds = emptySet() }) {
+                        Icon(Icons.Default.Clear, contentDescription = "Cancel Selection")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "${selectedItemIds.size} selected",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+
+                Row {
+                    val selectedItems = displayedItems.filter { it.id in selectedItemIds }
+                    
+                    IconButton(
+                        onClick = {
+                            scope.launch {
+                                val result = repository.batchDownload(selectedItems)
+                                result.onSuccess { zipFile ->
+                                    val shareIntent = FolderZipExporter.createShareOrOpenIntent(context, zipFile)
+                                    context.startActivity(Intent.createChooser(shareIntent, "Download Selected Items"))
+                                    selectedItemIds = emptySet()
+                                }.onFailure {
+                                    Toast.makeText(context, "Download failed: ${it.message}", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Default.Download, contentDescription = "Batch Download", tint = NeonCyan)
+                    }
+
+                    IconButton(
+                        onClick = {
+                            scope.launch {
+                                if (selectedCategory == "TRASH") {
+                                    repository.batchPermanentlyDelete(selectedItems)
+                                } else {
+                                    repository.batchMoveToTrash(selectedItems)
+                                }
+                                selectedItemIds = emptySet()
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = "Batch Delete", tint = CoralNeon)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+        }
 
         // Search Bar & View Controls
         Row(
@@ -382,13 +448,27 @@ fun VaultScreen(
                     FileItemCard(
                         item = item,
                         isGrid = true,
+                        selected = item.id in selectedItemIds,
                         onClick = {
-                            if (item.isFolder) {
-                                selectedCategory = "ALL"
-                                currentFolderId = item.id
-                                breadcrumbs = breadcrumbs + Breadcrumb(item.id, item.name)
+                            if (isSelectionMode) {
+                                selectedItemIds = if (item.id in selectedItemIds) {
+                                    selectedItemIds - item.id
+                                } else {
+                                    selectedItemIds + item.id
+                                }
                             } else {
-                                onFileClick(item)
+                                if (item.isFolder) {
+                                    selectedCategory = "ALL"
+                                    currentFolderId = item.id
+                                    breadcrumbs = breadcrumbs + Breadcrumb(item.id, item.name)
+                                } else {
+                                    onFileClick(item)
+                                }
+                            }
+                        },
+                        onLongClick = {
+                            if (!isSelectionMode) {
+                                selectedItemIds = setOf(item.id)
                             }
                         },
                         onFavoriteToggle = { scope.launch { repository.toggleFavorite(item) } },
@@ -408,7 +488,15 @@ fun VaultScreen(
                             if (item.isFolder) {
                                 downloadFolderAsZip(item.id, item.name)
                             } else {
-                                Toast.makeText(context, "Downloaded '${item.name}'", Toast.LENGTH_SHORT).show()
+                                scope.launch {
+                                    val result = repository.batchDownload(listOf(item))
+                                    result.onSuccess { zipFile ->
+                                        val shareIntent = FolderZipExporter.createShareOrOpenIntent(context, zipFile)
+                                        context.startActivity(Intent.createChooser(shareIntent, "Download ${item.name}"))
+                                    }.onFailure {
+                                        Toast.makeText(context, "Download failed", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
                             }
                         }
                     )
@@ -424,13 +512,27 @@ fun VaultScreen(
                     FileItemCard(
                         item = item,
                         isGrid = false,
+                        selected = item.id in selectedItemIds,
                         onClick = {
-                            if (item.isFolder) {
-                                selectedCategory = "ALL"
-                                currentFolderId = item.id
-                                breadcrumbs = breadcrumbs + Breadcrumb(item.id, item.name)
+                            if (isSelectionMode) {
+                                selectedItemIds = if (item.id in selectedItemIds) {
+                                    selectedItemIds - item.id
+                                } else {
+                                    selectedItemIds + item.id
+                                }
                             } else {
-                                onFileClick(item)
+                                if (item.isFolder) {
+                                    selectedCategory = "ALL"
+                                    currentFolderId = item.id
+                                    breadcrumbs = breadcrumbs + Breadcrumb(item.id, item.name)
+                                } else {
+                                    onFileClick(item)
+                                }
+                            }
+                        },
+                        onLongClick = {
+                            if (!isSelectionMode) {
+                                selectedItemIds = setOf(item.id)
                             }
                         },
                         onFavoriteToggle = { scope.launch { repository.toggleFavorite(item) } },
@@ -450,7 +552,15 @@ fun VaultScreen(
                             if (item.isFolder) {
                                 downloadFolderAsZip(item.id, item.name)
                             } else {
-                                Toast.makeText(context, "Downloaded '${item.name}'", Toast.LENGTH_SHORT).show()
+                                scope.launch {
+                                    val result = repository.batchDownload(listOf(item))
+                                    result.onSuccess { zipFile ->
+                                        val shareIntent = FolderZipExporter.createShareOrOpenIntent(context, zipFile)
+                                        context.startActivity(Intent.createChooser(shareIntent, "Download ${item.name}"))
+                                    }.onFailure {
+                                        Toast.makeText(context, "Download failed", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
                             }
                         }
                     )

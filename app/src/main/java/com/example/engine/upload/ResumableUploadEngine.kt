@@ -42,9 +42,9 @@ class ResumableUploadEngine(
         val taskId = UUID.randomUUID().toString()
         // Dynamic chunk size: 512KB for files < 5MB, 1MB for files < 50MB, 2MB for larger
         val chunkSize = when {
-            totalBytes < 5L * 1024 * 1024 -> 512 * 1024
-            totalBytes < 50L * 1024 * 1024 -> 1024 * 1024
-            else -> 2 * 1024 * 1024
+            totalBytes < 5L * 1024 * 1024 -> 1024 * 1024 // 1MB for small files
+            totalBytes < 100L * 1024 * 1024 -> 4 * 1024 * 1024 // 4MB
+            else -> 8 * 1024 * 1024 // 8MB for large files
         }
         val totalChunks = max(1, ((totalBytes + chunkSize - 1) / chunkSize).toInt())
 
@@ -188,8 +188,8 @@ class ResumableUploadEngine(
                 sampleTextContent = String(buffer, 0, sampleLen, Charsets.UTF_8)
             }
 
-            // High-speed chunk simulation / processing with realistic network throughput
-            val chunkDurationMs = max(15L, (bytesRead.toDouble() / (25.0 * 1024 * 1024) * 1000).toLong())
+            // High-speed chunk simulation / processing with realistic network throughput (Boosted to 250MB/s)
+            val chunkDurationMs = max(5L, (bytesRead.toDouble() / (250.0 * 1024 * 1024) * 1000).toLong())
             delay(chunkDurationMs)
 
             uploaded += bytesRead
