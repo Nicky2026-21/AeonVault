@@ -188,6 +188,7 @@
             <span class="crumb active" onclick="navigateToFolder(null)">Vault Root</span>
           </div>
           <div class="view-actions">
+            <button class="btn btn-outline" id="downloadCurrentFolderZipBtn" style="display: none;" onclick="downloadCurrentFolderAsZip()">📦 Download as ZIP</button>
             <button class="btn btn-outline" onclick="openNewFolderModal()">+ New Directory</button>
             <button class="btn btn-primary" onclick="switchTab('upload')">Upload Here</button>
           </div>
@@ -196,6 +197,7 @@
         <div class="filter-bar">
           <div class="filter-chips">
             <button class="chip active" data-cat="ALL">All Items</button>
+            <button class="chip" data-cat="FOLDER">Folders</button>
             <button class="chip" data-cat="DOCUMENT">Documents</button>
             <button class="chip" data-cat="IMAGE">Images</button>
             <button class="chip" data-cat="VIDEO">Video</button>
@@ -438,7 +440,7 @@
       </div>
       <div class="modal-body">
         <label>Directory Name:</label>
-        <input type="text" id="newFolderNameInput" class="input-field" placeholder="e.g., Quantum Manifests" style="width: 100%;" />
+        <input type="text" id="newFolderNameInput" class="input-field" placeholder="e.g., Quantum Manifests" style="width: 100%;" onkeydown="if (event.key === 'Enter') confirmCreateNewFolder();" />
         <div class="callout callout-cyan" style="margin-top: 12px; font-size: 12px;">
           Directories in ÆonVault are zero-knowledge virtual hierarchy containers mapped directly to your 1 QB addressing matrix.
         </div>

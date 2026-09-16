@@ -54,6 +54,9 @@ interface VaultDao {
     @Query("SELECT * FROM vault_items WHERE userId = :userId AND isTrash = 0 ORDER BY modifiedAt DESC")
     fun getAllActiveItems(userId: String): Flow<List<VaultItem>>
 
+    @Query("SELECT * FROM vault_items WHERE userId = :userId AND isTrash = 0 ORDER BY modifiedAt DESC")
+    suspend fun getAllActiveItemsSync(userId: String): List<VaultItem>
+
     @Query("SELECT * FROM vault_items WHERE userId = :userId AND isTrash = 0 AND isFavorite = 1 ORDER BY name ASC")
     fun getFavorites(userId: String): Flow<List<VaultItem>>
 

@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sort
@@ -63,8 +65,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.User
 import com.example.data.model.VaultItem
 import com.example.data.repository.VaultRepository
+import com.example.engine.zip.FolderZipExporter
 import com.example.ui.components.FileItemCard
 import com.example.ui.components.QuotaDisclaimerCard
 import com.example.ui.theme.AmberAlert
@@ -102,12 +106,42 @@ fun VaultScreen(
 
     var movingItem by remember { mutableStateOf<VaultItem?>(null) }
 
+    fun downloadFolderAsZip(folderId: String?, folderName: String) {
+        if (folderId == null) return
+        scope.launch {
+            Toast.makeText(context, "Exporting '$folderName' as ZIP...", Toast.LENGTH_SHORT).show()
+            val result = repository.exportFolderAsZip(folderId)
+            result.onSuccess { zipFile ->
+                val formattedSize = User.formatStorageSize(zipFile.length())
+                Toast.makeText(context, "ZIP created: ${zipFile.name} ($formattedSize)", Toast.LENGTH_LONG).show()
+                try {
+                    val shareIntent = FolderZipExporter.createShareOrOpenIntent(context, zipFile)
+                    context.startActivity(Intent.createChooser(shareIntent, "Open or Share ZIP Archive"))
+                } catch (e: Exception) {
+                    // Ignore chooser launch failure if no handler
+                }
+            }.onFailure { err ->
+                Toast.makeText(context, err.message ?: "Failed to generate ZIP", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     // Flows
-    val itemsInCurrentFolder by repository.getItemsInFolder(currentFolderId).collectAsState(initial = emptyList())
-    val allActiveItems by repository.getAllActiveItems().collectAsState(initial = emptyList())
-    val favoriteItems by repository.getFavorites().collectAsState(initial = emptyList())
-    val trashItems by repository.getTrashItems().collectAsState(initial = emptyList())
-    val searchResults by repository.searchItems(searchQuery).collectAsState(initial = emptyList())
+    val itemsInCurrentFolder by remember(currentFolderId, repository) {
+        repository.getItemsInFolder(currentFolderId)
+    }.collectAsState(initial = emptyList())
+    val allActiveItems by remember(repository) {
+        repository.getAllActiveItems()
+    }.collectAsState(initial = emptyList())
+    val favoriteItems by remember(repository) {
+        repository.getFavorites()
+    }.collectAsState(initial = emptyList())
+    val trashItems by remember(repository) {
+        repository.getTrashItems()
+    }.collectAsState(initial = emptyList())
+    val searchResults by remember(searchQuery, repository) {
+        repository.searchItems(searchQuery)
+    }.collectAsState(initial = emptyList())
 
     // Filter and Sort calculation
     val displayedItems = remember(
@@ -255,6 +289,15 @@ fun VaultScreen(
                         Icon(Icons.Default.DeleteSweep, contentDescription = "Empty Trash", tint = CoralNeon)
                     }
                 } else {
+                    if (currentFolderId != null) {
+                        val currentFolderName = breadcrumbs.lastOrNull()?.name ?: "Folder"
+                        IconButton(
+                            onClick = { downloadFolderAsZip(currentFolderId, currentFolderName) },
+                            modifier = Modifier.testTag("download_current_folder_zip_button")
+                        ) {
+                            Icon(Icons.Default.FolderZip, contentDescription = "Download Current Folder as ZIP", tint = NeonCyan)
+                        }
+                    }
                     IconButton(
                         onClick = { showCreateFolderDialog = true },
                         modifier = Modifier.testTag("create_folder_button")
@@ -275,6 +318,7 @@ fun VaultScreen(
         ) {
             val categories = listOf(
                 "ALL" to "All",
+                "FOLDERS" to "Folders",
                 "DOCUMENT" to "Documents",
                 "IMAGE" to "Images",
                 "VIDEO" to "Video",
@@ -340,6 +384,7 @@ fun VaultScreen(
                         isGrid = true,
                         onClick = {
                             if (item.isFolder) {
+                                selectedCategory = "ALL"
                                 currentFolderId = item.id
                                 breadcrumbs = breadcrumbs + Breadcrumb(item.id, item.name)
                             } else {
@@ -360,7 +405,11 @@ fun VaultScreen(
                         },
                         onPermanentDelete = { scope.launch { repository.permanentlyDelete(item) } },
                         onDownload = {
-                            Toast.makeText(context, "Downloaded '${item.name}'", Toast.LENGTH_SHORT).show()
+                            if (item.isFolder) {
+                                downloadFolderAsZip(item.id, item.name)
+                            } else {
+                                Toast.makeText(context, "Downloaded '${item.name}'", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     )
                 }
@@ -377,6 +426,7 @@ fun VaultScreen(
                         isGrid = false,
                         onClick = {
                             if (item.isFolder) {
+                                selectedCategory = "ALL"
                                 currentFolderId = item.id
                                 breadcrumbs = breadcrumbs + Breadcrumb(item.id, item.name)
                             } else {
@@ -397,7 +447,11 @@ fun VaultScreen(
                         },
                         onPermanentDelete = { scope.launch { repository.permanentlyDelete(item) } },
                         onDownload = {
-                            Toast.makeText(context, "Downloaded '${item.name}'", Toast.LENGTH_SHORT).show()
+                            if (item.isFolder) {
+                                downloadFolderAsZip(item.id, item.name)
+                            } else {
+                                Toast.makeText(context, "Downloaded '${item.name}'", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     )
                 }

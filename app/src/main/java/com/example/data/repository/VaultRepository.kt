@@ -21,7 +21,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
@@ -380,63 +382,153 @@ class VaultRepository(private val context: Context) {
 
     // --- Reactive File & Folder Operations ---
     fun getItemsInFolder(parentId: String?): Flow<List<VaultItem>> {
+        val normalizedParentId = if (parentId.isNullOrBlank()) null else parentId
         return _currentUser.flatMapLatest { user ->
-            val userId = user?.id ?: ""
-            dao.getItemsInFolder(userId, parentId)
+            if (user != null) {
+                dao.getItemsInFolder(user.id, normalizedParentId)
+            } else {
+                flow {
+                    val fallback = dao.getFirstUser()
+                    if (fallback != null) {
+                        _currentUser.value = fallback
+                        emitAll(dao.getItemsInFolder(fallback.id, normalizedParentId))
+                    } else {
+                        emit(emptyList())
+                    }
+                }
+            }
         }
     }
 
     fun getAllActiveItems(): Flow<List<VaultItem>> {
         return _currentUser.flatMapLatest { user ->
-            val userId = user?.id ?: ""
-            dao.getAllActiveItems(userId)
+            if (user != null) {
+                dao.getAllActiveItems(user.id)
+            } else {
+                flow {
+                    val fallback = dao.getFirstUser()
+                    if (fallback != null) {
+                        _currentUser.value = fallback
+                        emitAll(dao.getAllActiveItems(fallback.id))
+                    } else {
+                        emit(emptyList())
+                    }
+                }
+            }
         }
     }
 
     fun getFavorites(): Flow<List<VaultItem>> {
         return _currentUser.flatMapLatest { user ->
-            val userId = user?.id ?: ""
-            dao.getFavorites(userId)
+            if (user != null) {
+                dao.getFavorites(user.id)
+            } else {
+                flow {
+                    val fallback = dao.getFirstUser()
+                    if (fallback != null) {
+                        _currentUser.value = fallback
+                        emitAll(dao.getFavorites(fallback.id))
+                    } else {
+                        emit(emptyList())
+                    }
+                }
+            }
         }
     }
 
     fun getSharedItems(): Flow<List<VaultItem>> {
         return _currentUser.flatMapLatest { user ->
-            val userId = user?.id ?: ""
-            dao.getSharedItems(userId)
+            if (user != null) {
+                dao.getSharedItems(user.id)
+            } else {
+                flow {
+                    val fallback = dao.getFirstUser()
+                    if (fallback != null) {
+                        _currentUser.value = fallback
+                        emitAll(dao.getSharedItems(fallback.id))
+                    } else {
+                        emit(emptyList())
+                    }
+                }
+            }
         }
     }
 
     fun getTrashItems(): Flow<List<VaultItem>> {
         return _currentUser.flatMapLatest { user ->
-            val userId = user?.id ?: ""
-            dao.getTrashItems(userId)
+            if (user != null) {
+                dao.getTrashItems(user.id)
+            } else {
+                flow {
+                    val fallback = dao.getFirstUser()
+                    if (fallback != null) {
+                        _currentUser.value = fallback
+                        emitAll(dao.getTrashItems(fallback.id))
+                    } else {
+                        emit(emptyList())
+                    }
+                }
+            }
         }
     }
 
     fun getRecentItems(limit: Int = 10): Flow<List<VaultItem>> {
         return _currentUser.flatMapLatest { user ->
-            val userId = user?.id ?: ""
-            dao.getRecentItems(userId, limit)
+            if (user != null) {
+                dao.getRecentItems(user.id, limit)
+            } else {
+                flow {
+                    val fallback = dao.getFirstUser()
+                    if (fallback != null) {
+                        _currentUser.value = fallback
+                        emitAll(dao.getRecentItems(fallback.id, limit))
+                    } else {
+                        emit(emptyList())
+                    }
+                }
+            }
         }
     }
 
     fun searchItems(query: String): Flow<List<VaultItem>> {
         return _currentUser.flatMapLatest { user ->
-            val userId = user?.id ?: ""
-            dao.searchItems(userId, query)
+            if (user != null) {
+                dao.searchItems(user.id, query)
+            } else {
+                flow {
+                    val fallback = dao.getFirstUser()
+                    if (fallback != null) {
+                        _currentUser.value = fallback
+                        emitAll(dao.searchItems(fallback.id, query))
+                    } else {
+                        emit(emptyList())
+                    }
+                }
+            }
         }
     }
 
     suspend fun createFolder(name: String, parentId: String?): Result<VaultItem> = withContext(Dispatchers.IO) {
-        val user = _currentUser.value ?: return@withContext Result.failure(IllegalStateException("No active account"))
+        var user = _currentUser.value
+        if (user == null) {
+            user = dao.getFirstUser()
+            if (user != null) {
+                _currentUser.value = user
+            }
+        }
+        if (user == null) {
+            return@withContext Result.failure(IllegalStateException("No active account"))
+        }
+
         val trimmedName = name.trim()
         if (trimmedName.isBlank()) {
             return@withContext Result.failure(IllegalArgumentException("Directory name cannot be empty"))
         }
 
+        val normalizedParentId = if (parentId.isNullOrBlank()) null else parentId
+
         // Check if directory with same name already exists in this folder
-        val existing = dao.findItemByNameInFolder(user.id, trimmedName, parentId)
+        val existing = dao.findItemByNameInFolder(user.id, trimmedName, normalizedParentId)
         if (existing != null) {
             return@withContext Result.failure(IllegalArgumentException("An item or directory named '$trimmedName' already exists in this location"))
         }
@@ -445,7 +537,7 @@ class VaultRepository(private val context: Context) {
             id = "dir-" + UUID.randomUUID().toString().take(12),
             userId = user.id,
             name = trimmedName,
-            parentId = parentId,
+            parentId = normalizedParentId,
             isFolder = true,
             mimeType = "inode/directory",
             sizeBytes = 0L,
@@ -465,6 +557,35 @@ class VaultRepository(private val context: Context) {
             )
         )
         Result.success(folder)
+    }
+
+    suspend fun exportFolderAsZip(folderId: String): Result<java.io.File> = withContext(Dispatchers.IO) {
+        var user = _currentUser.value
+        if (user == null) {
+            user = dao.getFirstUser()
+            if (user != null) {
+                _currentUser.value = user
+            }
+        }
+        if (user == null) {
+            return@withContext Result.failure(IllegalStateException("No active account"))
+        }
+
+        val result = com.example.engine.zip.FolderZipExporter.exportFolderAsZip(context, dao, user.id, folderId)
+        result.onSuccess { zipFile ->
+            val folder = dao.getItemByIdSync(folderId)
+            val folderName = folder?.name ?: "Directory"
+            dao.insertLog(
+                ActivityLog(
+                    id = UUID.randomUUID().toString(),
+                    userId = user.id,
+                    actionType = "EXPORT_ZIP",
+                    description = "Exported directory '$folderName' as ZIP archive (${User.formatStorageSize(zipFile.length())})",
+                    targetItemName = zipFile.name
+                )
+            )
+        }
+        result
     }
 
     suspend fun renameItem(item: VaultItem, newName: String) = withContext(Dispatchers.IO) {

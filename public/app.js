@@ -177,11 +177,13 @@ function confirmCreateNewFolder() {
   });
 
   saveVault();
+  if (input) input.value = "";
   closeModal("newFolderModal");
   activeCategory = "ALL";
   document.querySelectorAll(".filter-chips .chip").forEach(c => {
     c.classList.toggle("active", c.getAttribute("data-cat") === "ALL");
   });
+  switchTab("files");
   renderVaultBreadcrumbs();
   renderVaultFiles();
   renderRecentFiles();
@@ -205,6 +207,10 @@ function navigateToFolder(folderId, folderName) {
 
 function renderVaultBreadcrumbs() {
   const container = document.getElementById("vaultBreadcrumbs");
+  const zipBtn = document.getElementById("downloadCurrentFolderZipBtn");
+  if (zipBtn) {
+    zipBtn.style.display = currentFolderId ? "inline-flex" : "none";
+  }
   if (!container) return;
   container.innerHTML = folderBreadcrumbs.map((crumb, idx) => {
     const isLast = idx === folderBreadcrumbs.length - 1;
@@ -243,6 +249,7 @@ function renderRecentFiles() {
       <td>
         ${f.isFolder ? `
           <button class="btn btn-outline btn-sm" onclick="switchTab('files'); navigateToFolder('${f.id}', '${escapeHtml(f.name)}')">Open</button>
+          <button class="btn btn-outline btn-sm" title="Download Folder as ZIP" onclick="downloadFolderAsZip('${f.id}', '${escapeHtml(f.name)}')">📦 ZIP</button>
         ` : `
           <button class="btn btn-outline btn-sm" onclick="openFilePreview('${f.id}')">Inspect</button>
           <button class="btn btn-outline btn-sm" onclick="openShareModal('${f.id}')">Share</button>
@@ -270,6 +277,7 @@ function renderVaultFiles() {
 
     if (activeCategory === "ALL") return true;
     if (activeCategory === "FAVORITES") return f.isFavorite;
+    if (activeCategory === "FOLDER" || activeCategory === "FOLDERS") return f.isFolder;
     return f.category === activeCategory;
   });
 
@@ -319,6 +327,7 @@ function renderVaultFiles() {
             <td>
               ${f.isFolder ? `
                 <button class="btn btn-outline btn-sm" onclick="navigateToFolder('${f.id}', '${escapeHtml(f.name)}')">Open</button>
+                <button class="btn btn-outline btn-sm" title="Download Folder as ZIP" onclick="downloadFolderAsZip('${f.id}', '${escapeHtml(f.name)}')">📦 ZIP</button>
                 <button class="btn btn-outline btn-sm" style="color:var(--coral);" onclick="deleteFile('${f.id}')">Delete</button>
               ` : `
                 <button class="btn btn-outline btn-sm" onclick="openFilePreview('${f.id}')">Inspect</button>
@@ -504,9 +513,196 @@ function openFilePreview(id) {
     openShareModal(file.id);
   };
   document.getElementById("previewDownloadBtn").onclick = () => {
-    alert(`Downloading "${file.name}" to your local browser storage.`);
+    const encoder = new TextEncoder();
+    const content = file.textContent || `ÆonVault File Manifest\nName: ${file.name}\nSize: ${file.formattedSize}\nCategory: ${file.category}\nEncryption: ${file.encryption}\nSummary: ${file.summary || ''}`;
+    const blob = new Blob([encoder.encode(content)], { type: "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = file.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   openModal("filePreviewModal");
+}
+
+// Pure JS Store (Uncompressed) ZIP Generator
+function buildZipArchive(entries) {
+  const crcTable = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) {
+      c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    }
+    crcTable[n] = c >>> 0;
+  }
+  function getCrc32(buf) {
+    let c = -1;
+    for (let i = 0; i < buf.length; i++) {
+      c = (c >>> 8) ^ crcTable[(c ^ buf[i]) & 0xFF];
+    }
+    return (c ^ -1) >>> 0;
+  }
+
+  const parts = [];
+  const centralDirectory = [];
+  let offset = 0;
+  const encoder = new TextEncoder();
+
+  for (const entry of entries) {
+    const isDir = entry.isFolder || entry.path.endsWith("/");
+    const pathBytes = encoder.encode(entry.path);
+    const dataBytes = isDir ? new Uint8Array(0) : (entry.data || new Uint8Array(0));
+    const crc = isDir ? 0 : getCrc32(dataBytes);
+    const size = dataBytes.length;
+
+    // Local Header (30 bytes + path length)
+    const localHeader = new Uint8Array(30 + pathBytes.length);
+    const view = new DataView(localHeader.buffer);
+    view.setUint32(0, 0x04034b50, true); // signature
+    view.setUint16(4, 20, true);         // version needed
+    view.setUint16(6, 0x0800, true);     // flags (UTF-8)
+    view.setUint16(8, 0, true);          // compression (0 = store)
+    view.setUint16(10, 0, true);         // mod time
+    view.setUint16(12, 0x2158, true);    // mod date
+    view.setUint32(14, crc, true);       // crc-32
+    view.setUint32(18, size, true);      // compressed size
+    view.setUint32(22, size, true);      // uncompressed size
+    view.setUint16(26, pathBytes.length, true); // file name length
+    view.setUint16(28, 0, true);         // extra field length
+    localHeader.set(pathBytes, 30);
+
+    parts.push(localHeader);
+    if (!isDir && size > 0) {
+      parts.push(dataBytes);
+    }
+
+    // Central Directory Header (46 bytes + path length)
+    const cdHeader = new Uint8Array(46 + pathBytes.length);
+    const cdView = new DataView(cdHeader.buffer);
+    cdView.setUint32(0, 0x02014b50, true); // central header signature
+    cdView.setUint16(4, 20, true);          // version made by
+    cdView.setUint16(6, 20, true);          // version needed
+    cdView.setUint16(8, 0x0800, true);      // flags (UTF-8)
+    cdView.setUint16(10, 0, true);         // compression
+    cdView.setUint16(12, 0, true);         // mod time
+    cdView.setUint16(14, 0x2158, true);    // mod date
+    cdView.setUint32(16, crc, true);       // crc32
+    cdView.setUint32(20, size, true);      // comp size
+    cdView.setUint32(24, size, true);      // uncomp size
+    cdView.setUint16(28, pathBytes.length, true); // name length
+    cdView.setUint16(30, 0, true);         // extra field length
+    cdView.setUint16(32, 0, true);         // comment length
+    cdView.setUint16(34, 0, true);         // disk number start
+    cdView.setUint16(36, 0, true);         // internal attributes
+    cdView.setUint32(38, isDir ? 0x10 : 0, true); // external attributes (directory bit)
+    cdView.setUint32(42, offset, true);    // relative offset of local header
+    cdHeader.set(pathBytes, 46);
+    centralDirectory.push(cdHeader);
+
+    offset += localHeader.length + (isDir ? 0 : size);
+  }
+
+  const cdOffset = offset;
+  let cdSize = 0;
+  for (const cd of centralDirectory) {
+    parts.push(cd);
+    cdSize += cd.length;
+  }
+
+  // End of central directory record (22 bytes)
+  const eocd = new Uint8Array(22);
+  const eocdView = new DataView(eocd.buffer);
+  eocdView.setUint32(0, 0x06054b50, true); // EOCD signature
+  eocdView.setUint16(4, 0, true);          // disk number
+  eocdView.setUint16(6, 0, true);          // start disk
+  eocdView.setUint16(8, entries.length, true);  // entries on disk
+  eocdView.setUint16(10, entries.length, true); // total entries
+  eocdView.setUint32(12, cdSize, true);         // central dir size
+  eocdView.setUint32(16, cdOffset, true);       // central dir offset
+  eocdView.setUint16(20, 0, true);              // comment length
+  parts.push(eocd);
+
+  return new Blob(parts, { type: "application/zip" });
+}
+
+function downloadFolderAsZip(folderId, folderName) {
+  const currentUserId = vault.user ? vault.user.id : "acc_1";
+  const userFiles = vault.files.filter(f => !f.userId || f.userId === currentUserId);
+  const targetFolder = userFiles.find(f => f.id === folderId);
+  const rootName = folderName || (targetFolder ? targetFolder.name : "Folder");
+  const encoder = new TextEncoder();
+
+  const entries = [];
+
+  function gather(parentDirId, currentPath) {
+    entries.push({
+      path: currentPath.endsWith("/") ? currentPath : currentPath + "/",
+      data: new Uint8Array(0),
+      isFolder: true
+    });
+
+    const children = userFiles.filter(f => f.parentId === parentDirId);
+    for (const child of children) {
+      const childPath = `${currentPath}/${child.name}`;
+      if (child.isFolder) {
+        gather(child.id, childPath);
+      } else {
+        let contentBytes;
+        if (child.textContent) {
+          contentBytes = encoder.encode(child.textContent);
+        } else {
+          const desc = [
+            `ÆonVault Zero-Knowledge Object Manifest`,
+            `=======================================`,
+            `Object ID: ${child.id}`,
+            `Name: ${child.name}`,
+            `Category: ${child.category}`,
+            `Size: ${child.formattedSize}`,
+            `Encryption: ${child.encryption}`,
+            `Integrity: SHA-256 Verified OK`,
+            `Storage Node: Æon Distributed Cluster Delta-7`,
+            `Summary: ${child.summary || 'Encrypted block matrix'}`
+          ].join("\n");
+          contentBytes = encoder.encode(desc);
+        }
+        entries.push({
+          path: childPath,
+          data: contentBytes,
+          isFolder: false
+        });
+      }
+    }
+  }
+
+  gather(folderId, rootName);
+
+  const blob = buildZipArchive(entries);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${rootName}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+  vault.activities.unshift({
+    id: "act_" + Date.now(),
+    action: "EXPORT_ZIP",
+    desc: `Downloaded directory "${rootName}" as ZIP archive (${formatBytes(blob.size)})`,
+    time: "Just now"
+  });
+  saveVault();
+  renderAuditLedger();
+}
+
+function downloadCurrentFolderAsZip() {
+  if (!currentFolderId) return;
+  const currentCrumb = folderBreadcrumbs[folderBreadcrumbs.length - 1];
+  downloadFolderAsZip(currentFolderId, currentCrumb ? currentCrumb.name : "Directory");
 }
 
 function openShareModal(id) {

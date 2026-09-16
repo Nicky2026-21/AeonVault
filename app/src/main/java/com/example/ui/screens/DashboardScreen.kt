@@ -580,7 +580,24 @@ fun DashboardScreen(
                 onTrashOrRestore = { scope.launch { repository.moveToTrash(item) } },
                 onPermanentDelete = { scope.launch { repository.permanentlyDelete(item) } },
                 onDownload = {
-                    android.widget.Toast.makeText(context, "Downloaded '${item.name}' to local device storage", android.widget.Toast.LENGTH_SHORT).show()
+                    if (item.isFolder) {
+                        scope.launch {
+                            android.widget.Toast.makeText(context, "Exporting '${item.name}' as ZIP...", android.widget.Toast.LENGTH_SHORT).show()
+                            val result = repository.exportFolderAsZip(item.id)
+                            result.onSuccess { zipFile ->
+                                val formattedSize = com.example.data.model.User.formatStorageSize(zipFile.length())
+                                android.widget.Toast.makeText(context, "ZIP created: ${zipFile.name} ($formattedSize)", android.widget.Toast.LENGTH_LONG).show()
+                                try {
+                                    val shareIntent = com.example.engine.zip.FolderZipExporter.createShareOrOpenIntent(context, zipFile)
+                                    context.startActivity(android.content.Intent.createChooser(shareIntent, "Open or Share ZIP Archive"))
+                                } catch (e: Exception) {}
+                            }.onFailure { err ->
+                                android.widget.Toast.makeText(context, err.message ?: "Failed to generate ZIP", android.widget.Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    } else {
+                        android.widget.Toast.makeText(context, "Downloaded '${item.name}' to local device storage", android.widget.Toast.LENGTH_SHORT).show()
+                    }
                 }
             )
         }

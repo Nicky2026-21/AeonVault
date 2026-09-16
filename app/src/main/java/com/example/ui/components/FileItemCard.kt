@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Restore
@@ -338,6 +339,12 @@ fun FileActionMenu(
                     text = { Text("Share Link") },
                     leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
                     onClick = onShare
+                )
+            } else {
+                DropdownMenuItem(
+                    text = { Text("Download as ZIP") },
+                    leadingIcon = { Icon(Icons.Default.FolderZip, contentDescription = null, tint = NeonCyan) },
+                    onClick = onDownload
                 )
             }
             DropdownMenuItem(
