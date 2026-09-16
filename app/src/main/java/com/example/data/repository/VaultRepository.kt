@@ -59,39 +59,57 @@ class VaultRepository(private val context: Context) {
 
         scope.launch {
             val lastUserId = prefs.getString("last_active_user_id", null)
-            var user = if (lastUserId != null) dao.getUserByIdSync(lastUserId) else dao.getFirstUser()
+            var user: User? = null
             
-            if (user == null) {
-                val defaultSalt = UUID.randomUUID().toString().take(8)
-                val defaultUser = User(
-                    id = "aeon-usr-core-01",
-                    username = "NexusCommander",
-                    email = "vault.commander@aeonvaultfilemanager.vercel.app",
-                    passwordHash = User.hashPassword("AeonVault2026!", defaultSalt),
-                    salt = defaultSalt,
-                    recoveryKey = "AEON-9842-QUANTUM-RECOVER-7719",
-                    quotaUsedBytes = 0L,
-                    planTier = "Æon Prime",
-                    avatarColorHex = "#00F5FF"
-                )
-                dao.insertUser(defaultUser)
-                user = defaultUser
-                seedDefaultVaultData(defaultUser.id)
+            if (lastUserId != null) {
+                user = dao.getUserByIdSync(lastUserId)
             }
+
+            if (user == null) {
+                // If no active session, check if any users exist at all
+                val allUsersSync = dao.getAllUsersSync()
+                if (allUsersSync.isEmpty()) {
+                    // First run: create default user and auto-login
+                    val defaultSalt = UUID.randomUUID().toString().take(8)
+                    val defaultUser = User(
+                        id = "aeon-usr-core-01",
+                        username = "NexusCommander",
+                        email = "vault.commander@aeonvaultfilemanager.vercel.app",
+                        passwordHash = User.hashPassword("AeonVault2026!", defaultSalt),
+                        salt = defaultSalt,
+                        recoveryKey = "AEON-9842-QUANTUM-RECOVER-7719",
+                        quotaUsedBytes = 0L,
+                        planTier = "Æon Prime",
+                        avatarColorHex = "#00F5FF"
+                    )
+                    dao.insertUser(defaultUser)
+                    user = defaultUser
+                    seedDefaultVaultData(defaultUser.id)
+                    saveLastActiveUser(user.id)
+                } else {
+                    // There are users, but no active session (maybe they logged out)
+                    // We stay at currentUser = null, which will show AuthScreen
+                    user = null
+                }
+            }
+            
             _currentUser.value = user
-            saveLastActiveUser(user?.id)
             _isInitializing.value = false
         }
     }
 
     private fun saveLastActiveUser(userId: String?) {
-        prefs.edit().putString("last_active_user_id", userId).apply()
+        if (userId == null) {
+            prefs.edit().remove("last_active_user_id").commit()
+        } else {
+            prefs.edit().putString("last_active_user_id", userId).commit()
+        }
     }
 
     private suspend fun seedDefaultVaultData(userId: String) {
-        val folderDocsId = "folder-quantum-docs"
-        val folderMediaId = "folder-media-core"
-        val folderCodeId = "folder-hyper-code"
+        val folderDocsId = "folder-docs-$userId"
+        val folderMediaId = "folder-media-$userId"
+        val folderCodeId = "folder-code-$userId"
 
         val initialFolders = listOf(
             VaultItem(
@@ -259,9 +277,9 @@ class VaultRepository(private val context: Context) {
             avatarColorHex = "#00F5FF"
         )
         dao.insertUser(newUser)
+        seedDefaultVaultData(newUser.id)
         _currentUser.value = newUser
         saveLastActiveUser(newUser.id)
-        seedDefaultVaultData(newUser.id)
 
         dao.insertLog(
             ActivityLog(

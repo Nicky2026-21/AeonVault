@@ -297,7 +297,14 @@ fun AeonVaultApp(
                 previewingFile = null
             },
             onDownload = {
-                Toast.makeText(context, "Downloaded '${item.name}' to local device storage", Toast.LENGTH_SHORT).show()
+                scope.launch {
+                    repository.batchDownload(listOf(item)).onSuccess { zipFile ->
+                        val intent = com.example.engine.zip.FolderZipExporter.createShareOrOpenIntent(context, zipFile)
+                        context.startActivity(Intent.createChooser(intent, "Save ÆonVault File"))
+                    }.onFailure {
+                        Toast.makeText(context, "Download failed: ${it.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
                 previewingFile = null
             }
         )
