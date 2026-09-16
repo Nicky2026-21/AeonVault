@@ -86,10 +86,30 @@ let folderBreadcrumbs = [{ id: null, name: "Vault Root" }];
 
 function loadVault() {
   const saved = localStorage.getItem(VAULT_KEY);
+  let state;
   if (saved) {
-    try { return JSON.parse(saved); } catch(e) {}
+    try { 
+      state = JSON.parse(saved); 
+    } catch(e) {
+      console.error("Vault recovery failed, using default state", e);
+    }
   }
-  return JSON.parse(JSON.stringify(defaultState));
+  
+  if (!state) state = JSON.parse(JSON.stringify(defaultState));
+  
+  // Data Sanitization & Migration
+  if (!state.user) state.user = JSON.parse(JSON.stringify(defaultState.user));
+  if (!state.accounts) state.accounts = JSON.parse(JSON.stringify(defaultState.accounts));
+  if (!Array.isArray(state.files)) state.files = JSON.parse(JSON.stringify(defaultState.files));
+  if (!state.activities) state.activities = JSON.parse(JSON.stringify(defaultState.activities));
+  if (!state.shareLinks) state.shareLinks = JSON.parse(JSON.stringify(defaultState.shareLinks));
+  
+  // Ensure default files are present if vault is completely empty (failsafe)
+  if (state.files.length === 0 && state.user.id === "acc_1") {
+    state.files = JSON.parse(JSON.stringify(defaultState.files));
+  }
+
+  return state;
 }
 
 function saveVault() {
@@ -102,17 +122,29 @@ function checkAuth() {
   const appView = document.getElementById("app-view");
 
   if (!token) {
-    if (authView) authView.style.display = "flex";
+    if (authView) {
+      authView.style.display = "flex";
+      // Pre-fill demo credentials for ease of use
+      const loginEmail = document.getElementById("loginEmail");
+      if (loginEmail && !loginEmail.value) {
+        loginEmail.value = "vault.commander@aeonvaultfilemanager.vercel.app";
+      }
+    }
     if (appView) appView.style.display = "none";
   } else {
     if (authView) authView.style.display = "none";
-    if (appView) appView.style.display = "block";
+    if (appView) {
+      appView.style.display = "block";
+      // Ensure layout is triggered
+      window.dispatchEvent(new Event('resize'));
+    }
     try {
       const sessionData = JSON.parse(token);
       if (vault.user.id !== sessionData.userId) {
         switchAccount(sessionData.userId);
       }
     } catch (e) {
+      console.error("Auth session corrupted", e);
       localStorage.removeItem(SESSION_KEY);
       checkAuth();
     }
@@ -124,6 +156,33 @@ function toggleAuthSection(section) {
   const signupSec = document.getElementById("auth-signup-section");
   if (loginSec) loginSec.style.display = section === "login" ? "block" : "none";
   if (signupSec) signupSec.style.display = section === "signup" ? "block" : "none";
+}
+
+function performDemoLogin() {
+  const demoUser = vault.accounts.find(a => a.id === "acc_1");
+  if (!demoUser) {
+    // Failsafe: recreate if missing
+    vault.accounts.push(defaultState.accounts[0]);
+    vault.user = defaultState.accounts[0];
+  } else {
+    vault.user = demoUser;
+  }
+  
+  const token = {
+    userId: vault.user.id,
+    email: vault.user.email,
+    exp: Date.now() + (7 * 24 * 60 * 60 * 1000)
+  };
+  localStorage.setItem(SESSION_KEY, JSON.stringify(token));
+  
+  // Ensure default files exist for demo user if they were deleted
+  const demoFiles = vault.files.filter(f => !f.userId || f.userId === "acc_1");
+  if (demoFiles.length === 0) {
+    vault.files = [...vault.files, ...defaultState.files];
+  }
+
+  saveVault();
+  checkAuth();
 }
 
 function performLogin() {
@@ -339,36 +398,47 @@ function renderVaultBreadcrumbs() {
 function renderRecentFiles() {
   const tbody = document.getElementById("recentFilesBody");
   if (!tbody) return;
-  const currentUserId = vault.user ? vault.user.id : "acc_1";
-  const userFiles = vault.files.filter(f => !f.userId || f.userId === currentUserId);
-  tbody.innerHTML = userFiles.slice(0, 8).map(f => `
-    <tr>
-      <td>
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <span>${f.isFolder ? '📁' : '📄'}</span>
+  try {
+    const currentUserId = vault.user ? vault.user.id : "acc_1";
+    const userFiles = vault.files.filter(f => !f.userId || f.userId === currentUserId);
+    
+    if (userFiles.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:32px; color:var(--text-muted);">No recent items in this vault partition.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = userFiles.slice(0, 8).map(f => `
+      <tr>
+        <td>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span>${f.isFolder ? '📁' : '📄'}</span>
+            ${f.isFolder ? `
+              <strong style="cursor: pointer; color: var(--neon-cyan);" onclick="switchTab('files'); navigateToFolder('${f.id}', '${escapeHtml(f.name)}')">
+                ${escapeHtml(f.name)}
+              </strong>
+            ` : `
+              <strong>${escapeHtml(f.name)}</strong>
+            `}
+          </div>
+        </td>
+        <td><span class="badge ${f.isFolder ? 'badge-violet' : 'badge-cyan'}">${f.isFolder ? 'DIRECTORY' : (f.category || 'GENERAL')}</span></td>
+        <td>${f.isFolder ? '--' : (f.formattedSize || '0 B')}</td>
+        <td><code>${f.encryption || 'AES-256'}</code></td>
+        <td>
           ${f.isFolder ? `
-            <strong style="cursor: pointer; color: var(--neon-cyan);" onclick="switchTab('files'); navigateToFolder('${f.id}', '${escapeHtml(f.name)}')">
-              ${escapeHtml(f.name)}
-            </strong>
+            <button class="btn btn-outline btn-sm" onclick="switchTab('files'); navigateToFolder('${f.id}', '${escapeHtml(f.name)}')">Open</button>
+            <button class="btn btn-outline btn-sm" title="Download Folder as ZIP" onclick="downloadFolderAsZip('${f.id}', '${escapeHtml(f.name)}')">📦 ZIP</button>
           ` : `
-            <strong>${escapeHtml(f.name)}</strong>
+            <button class="btn btn-outline btn-sm" onclick="openFilePreview('${f.id}')">Inspect</button>
+            <button class="btn btn-outline btn-sm" onclick="openShareModal('${f.id}')">Share</button>
           `}
-        </div>
-      </td>
-      <td><span class="badge ${f.isFolder ? 'badge-violet' : 'badge-cyan'}">${f.isFolder ? 'DIRECTORY' : f.category}</span></td>
-      <td>${f.isFolder ? '--' : f.formattedSize}</td>
-      <td><code>${f.encryption}</code></td>
-      <td>
-        ${f.isFolder ? `
-          <button class="btn btn-outline btn-sm" onclick="switchTab('files'); navigateToFolder('${f.id}', '${escapeHtml(f.name)}')">Open</button>
-          <button class="btn btn-outline btn-sm" title="Download Folder as ZIP" onclick="downloadFolderAsZip('${f.id}', '${escapeHtml(f.name)}')">📦 ZIP</button>
-        ` : `
-          <button class="btn btn-outline btn-sm" onclick="openFilePreview('${f.id}')">Inspect</button>
-          <button class="btn btn-outline btn-sm" onclick="openShareModal('${f.id}')">Share</button>
-        `}
-      </td>
-    </tr>
-  `).join("");
+        </td>
+      </tr>
+    `).join("");
+  } catch (e) {
+    console.error("Error rendering recent files:", e);
+    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--coral);">Failed to render items. Check console for details.</td></tr>';
+  }
 }
 
 // Render Vault Files (My Vault)
@@ -376,82 +446,87 @@ function renderVaultFiles() {
   const container = document.getElementById("vaultFilesContainer");
   if (!container) return;
 
-  const currentUserId = vault.user ? vault.user.id : "acc_1";
-  const userFiles = vault.files.filter(f => !f.userId || f.userId === currentUserId);
+  try {
+    const currentUserId = vault.user ? vault.user.id : "acc_1";
+    const userFiles = vault.files.filter(f => !f.userId || f.userId === currentUserId);
 
-  const filtered = userFiles.filter(f => {
-    // Parent folder filtering
-    const matchesFolder = (currentFolderId === null) 
-      ? (!f.parentId || f.parentId === "" || f.parentId === null)
-      : (f.parentId === currentFolderId);
+    const filtered = userFiles.filter(f => {
+      // Parent folder filtering
+      const matchesFolder = (currentFolderId === null) 
+        ? (!f.parentId || f.parentId === "" || f.parentId === null)
+        : (f.parentId === currentFolderId);
 
-    if (!matchesFolder) return false;
+      if (!matchesFolder) return false;
 
-    if (activeCategory === "ALL") return true;
-    if (activeCategory === "FAVORITES") return f.isFavorite;
-    if (activeCategory === "FOLDER" || activeCategory === "FOLDERS") return f.isFolder;
-    return f.category === activeCategory;
-  });
+      if (activeCategory === "ALL") return true;
+      if (activeCategory === "FAVORITES") return !!f.isFavorite;
+      if (activeCategory === "FOLDER" || activeCategory === "FOLDERS") return !!f.isFolder;
+      return f.category === activeCategory;
+    });
 
-  if (filtered.length === 0) {
+    if (filtered.length === 0) {
+      container.innerHTML = `
+        <div style="padding:48px; text-align:center; color:var(--text-muted); width: 100%;">
+          <div style="font-size: 28px; margin-bottom: 8px;">📂</div>
+          <div>No items in this directory.</div>
+          <div style="margin-top: 12px;">
+            <button class="btn btn-outline btn-sm" onclick="openNewFolderModal()">+ Create Directory</button>
+          </div>
+        </div>`;
+      return;
+    }
+
     container.innerHTML = `
-      <div style="padding:48px; text-align:center; color:var(--text-muted);">
-        <div style="font-size: 28px; margin-bottom: 8px;">📂</div>
-        <div>No items in this directory.</div>
-        <div style="margin-top: 12px;">
-          <button class="btn btn-outline btn-sm" onclick="openNewFolderModal()">+ Create Directory</button>
-        </div>
-      </div>`;
-    return;
-  }
-
-  container.innerHTML = `
-    <table class="files-table">
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Type</th>
-          <th>Size</th>
-          <th>Last Modified</th>
-          <th>Integrity</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${filtered.map(f => `
-          <tr style="${f.isFolder ? 'background: rgba(0, 245, 255, 0.03);' : ''}">
-            <td>
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <span>${f.isFolder ? '📁' : '📄'}</span>
-                ${f.isFolder ? `
-                  <strong style="cursor: pointer; color: var(--neon-cyan);" onclick="navigateToFolder('${f.id}', '${escapeHtml(f.name)}')">
-                    ${escapeHtml(f.name)}
-                  </strong>
-                ` : `
-                  <strong>${escapeHtml(f.name)}</strong>
-                `}
-              </div>
-            </td>
-            <td><span class="badge ${f.isFolder ? 'badge-violet' : 'badge-cyan'}">${f.isFolder ? 'DIRECTORY' : f.category}</span></td>
-            <td>${f.isFolder ? '--' : f.formattedSize}</td>
-            <td>${f.updatedAt}</td>
-            <td><span class="badge badge-emerald">SHA-256 OK</span></td>
-            <td>
-              ${f.isFolder ? `
-                <button class="btn btn-outline btn-sm" onclick="navigateToFolder('${f.id}', '${escapeHtml(f.name)}')">Open</button>
-                <button class="btn btn-outline btn-sm" title="Download Folder as ZIP" onclick="downloadFolderAsZip('${f.id}', '${escapeHtml(f.name)}')">📦 ZIP</button>
-                <button class="btn btn-outline btn-sm" style="color:var(--coral);" onclick="deleteFile('${f.id}')">Delete</button>
-              ` : `
-                <button class="btn btn-outline btn-sm" onclick="openFilePreview('${f.id}')">Inspect</button>
-                <button class="btn btn-outline btn-sm" onclick="openShareModal('${f.id}')">Share</button>
-                <button class="btn btn-outline btn-sm" style="color:var(--coral);" onclick="deleteFile('${f.id}')">Delete</button>
-              `}
-            </td>
+      <table class="files-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Size</th>
+            <th>Last Modified</th>
+            <th>Integrity</th>
+            <th>Actions</th>
           </tr>
-        `).join("")}
-      </tbody>
-    </table>
-  `;
+        </thead>
+        <tbody>
+          ${filtered.map(f => `
+            <tr style="${f.isFolder ? 'background: rgba(0, 245, 255, 0.03);' : ''}">
+              <td>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span>${f.isFolder ? '📁' : '📄'}</span>
+                  ${f.isFolder ? `
+                    <strong style="cursor: pointer; color: var(--neon-cyan);" onclick="navigateToFolder('${f.id}', '${escapeHtml(f.name)}')">
+                      ${escapeHtml(f.name)}
+                    </strong>
+                  ` : `
+                    <strong>${escapeHtml(f.name)}</strong>
+                  `}
+                </div>
+              </td>
+              <td><span class="badge ${f.isFolder ? 'badge-violet' : 'badge-cyan'}">${f.isFolder ? 'DIRECTORY' : (f.category || 'GENERAL')}</span></td>
+              <td>${f.isFolder ? '--' : (f.formattedSize || '0 B')}</td>
+              <td>${f.updatedAt || 'Unknown'}</td>
+              <td><span class="badge badge-emerald">SHA-256 OK</span></td>
+              <td>
+                ${f.isFolder ? `
+                  <button class="btn btn-outline btn-sm" onclick="navigateToFolder('${f.id}', '${escapeHtml(f.name)}')">Open</button>
+                  <button class="btn btn-outline btn-sm" title="Download Folder as ZIP" onclick="downloadFolderAsZip('${f.id}', '${escapeHtml(f.name)}')">📦 ZIP</button>
+                  <button class="btn btn-outline btn-sm" style="color:var(--coral);" onclick="deleteFile('${f.id}')">Delete</button>
+                ` : `
+                  <button class="btn btn-outline btn-sm" onclick="openFilePreview('${f.id}')">Inspect</button>
+                  <button class="btn btn-outline btn-sm" onclick="openShareModal('${f.id}')">Share</button>
+                  <button class="btn btn-outline btn-sm" style="color:var(--coral);" onclick="deleteFile('${f.id}')">Delete</button>
+                `}
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  } catch (e) {
+    console.error("Error rendering vault files:", e);
+    container.innerHTML = '<div style="padding:48px; text-align:center; color:var(--coral);">Critical failure in vault rendering engine.</div>';
+  }
 }
 
 // Category filter chips

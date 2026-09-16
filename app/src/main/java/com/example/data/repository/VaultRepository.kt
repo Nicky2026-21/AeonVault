@@ -72,6 +72,12 @@ class VaultRepository(private val context: Context) {
                     // Auto-login to the first available user for a seamless experience
                     user = allUsersSync.first()
                     saveLastActiveUser(user.id)
+                    
+                    // If the primary user has NO data, re-seed it (failsafe for "missing files" issue)
+                    val activeItems = dao.getAllActiveItemsSync(user.id)
+                    if (activeItems.isEmpty() && user.id == "aeon-usr-core-01") {
+                        seedDefaultVaultData(user.id)
+                    }
                 } else {
                     // First run: create default user and auto-login
                     val defaultSalt = UUID.randomUUID().toString().take(8)
